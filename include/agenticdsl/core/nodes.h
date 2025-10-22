@@ -1,90 +1,99 @@
-#ifndef AGENFLOW_NODES_H
-#define AGENFLOW_NODES_H
+#ifndef AGENICDSL_CORE_NODES_H
+#define AGENICDSL_CORE_NODES_H
 
 #include "common/types.h"
 #include <string>
 #include <unordered_map>
-#include <memory>
-#include <optional>
 #include <vector>
+#include <nlohmann/json.hpp>
 
 namespace agenticdsl {
 
-// 前向声明渲染器
+// Forward declarations
 class InjaTemplateRenderer;
 
-// 节点基类
+// Base Node
 struct Node {
-    NodePath path; // v1.1: Use path instead of id
+    NodePath path;
     NodeType type;
-    std::vector<NodePath> next; // v1.1: Allow multiple next paths
-    nlohmann::json metadata; // Optional metadata
+    std::vector<NodePath> next;
+    nlohmann::json metadata;
+
+    Node(NodePath path,
+         NodeType type,
+         std::vector<NodePath> next = {},
+         nlohmann::json metadata = nlohmann::json::object())
+        : path(std::move(path)),
+          type(type),
+          next(std::move(next)),
+          metadata(std::move(metadata)) {}
 
     virtual ~Node() = default;
-    virtual Context execute(Context& context) = 0;
+    [[nodiscard]] virtual Context execute(Context& context) = 0;
 };
 
-// Start节点
+// Start Node
 struct StartNode : public Node {
     StartNode(NodePath path, std::vector<NodePath> next_paths = {});
-    Context execute(Context& context) override;
+    [[nodiscard]] Context execute(Context& context) override;
 };
 
-// End节点
+// End Node
 struct EndNode : public Node {
     EndNode(NodePath path);
-    Context execute(Context& context) override;
+    [[nodiscard]] Context execute(Context& context) override;
 };
 
-// Assign节点 - 使用 inja 渲染 (v1.1: renamed from Set)
+// Assign Node (v1.1: renamed from Set)
 struct AssignNode : public Node {
-    std::unordered_map<std::string, std::string> assign; // key -> Inja template_string
+    std::unordered_map<std::string, std::string> assign;
 
     AssignNode(NodePath path,
                std::unordered_map<std::string, std::string> assigns,
                std::vector<NodePath> next_paths = {});
-    Context execute(Context& context) override;
+    [[nodiscard]] Context execute(Context& context) override;
 };
 
-// LLM调用节点
+// LLM Call Node
 struct LLMCallNode : public Node {
-    std::string prompt_template; // Inja template
-    std::vector<std::string> output_keys; // v1.1: Allow multiple output keys
+    std::string prompt_template;
+    std::vector<std::string> output_keys;
 
     LLMCallNode(NodePath path,
                 std::string prompt,
                 std::vector<std::string> output_keys,
                 std::vector<NodePath> next_paths = {});
-    Context execute(Context& context) override;
+    [[nodiscard]] Context execute(Context& context) override;
 };
 
-// 工具调用节点
+// Tool Call Node
 struct ToolCallNode : public Node {
     std::string tool_name;
-    std::unordered_map<std::string, std::string> arguments; // arg_name -> Inja template_string
-    std::vector<std::string> output_keys; // v1.1: Allow multiple output keys
+    std::unordered_map<std::string, std::string> arguments;
+    std::vector<std::string> output_keys;
 
     ToolCallNode(NodePath path,
-                 std::string tool,
+                 std::string tool_name,
                  std::unordered_map<std::string, std::string> arguments,
                  std::vector<std::string> output_keys,
                  std::vector<NodePath> next_paths = {});
-    Context execute(Context& context) override;
+    [[nodiscard]] Context execute(Context& context) override;
 };
 
-// Resource节点 (v1.1: new)
+// Resource Node (v1.1)
 struct ResourceNode : public Node {
     ResourceType resource_type;
     std::string uri;
-    std::string scope; // "global" or "local"
+    std::string scope;
 
     ResourceNode(NodePath path,
                  ResourceType type,
                  std::string uri,
-                 std::string scope = "global");
-    Context execute(Context& context) override; // This node just registers itself
+                 std::string scope = "global",
+                 nlohmann::json metadata = nlohmann::json::object());
+    [[nodiscard]] Context execute(Context& context) override;
 };
 
 } // namespace agenticdsl
 
-#endif
+#endif // AGENICDSL_CORE_NODES_H

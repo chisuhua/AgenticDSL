@@ -117,12 +117,14 @@
 ```markdown
 ### AgenticDSL `/__meta__`
 
+```yaml
 # --- BEGIN AgenticDSL ---
 version: "1.1"
 requires: ["tool:web_search", "resource:weather_cache"]
 description: "天气查询 Agent"
 # --- END AgenticDSL ---
 ```
+
 
 > 执行器可据此做依赖检查、版本兼容性判断。
 
@@ -135,6 +137,7 @@ description: "天气查询 Agent"
 ```markdown
 ### AgenticDSL `/main/ask_user`
 
+```yaml
 # --- BEGIN AgenticDSL ---
 type: llm_call
 prompt_template: "Hello! What would you like to do today?"
@@ -145,11 +148,13 @@ metadata:
 # --- END AgenticDSL ---
 ```
 
+
 ### 3.2 资源节点（Resource Node）——只读输入源
 
 ```markdown
 ### AgenticDSL `/resources/user_db`
 
+```yaml
 # --- BEGIN AgenticDSL ---
 type: resource
 resource_type: postgres
@@ -159,6 +164,7 @@ metadata:
   description: "用户主数据库连接"
 # --- END AgenticDSL ---
 ```
+
 
 #### 字段说明
 

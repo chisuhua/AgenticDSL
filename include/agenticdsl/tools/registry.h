@@ -1,10 +1,10 @@
-#ifndef AGENFLOW_REGISTRY_H
-#define AGENFLOW_REGISTRY_H
+#ifndef AGENTICDSL_TOOLS_REGISTRY_H
+#define AGENTICDSL_TOOLS_REGISTRY_H
 
 #include "common/types.h"
 #include <unordered_map>
 #include <functional>
-#include <string_view>
+#include <string>
 #include <vector>
 
 namespace agenticdsl {
@@ -14,19 +14,17 @@ public:
     static ToolRegistry& instance();
 
     template<typename Func>
-    requires std::invocable<Func, const std::unordered_map<std::string, std::string>&>
-    void register_tool(std::string_view name, Func&& func);
+    void register_tool(std::string name, Func&& func);
 
-    bool has_tool(std::string_view name) const;
-    nlohmann::json call_tool(std::string_view name, const std::unordered_map<std::string, std::string>& args);
+    bool has_tool(const std::string& name) const;
+    nlohmann::json call_tool(const std::string& name, const std::unordered_map<std::string, std::string>& args);
     std::vector<std::string> list_tools() const;
 
 private:
     ToolRegistry() = default;
-    std::unordered_map<std::string, std::function<nlohmann::json(const std::unordered_map<std::string, std::string>&)>> tools_;
+    void register_default_tools();
 
-    static bool register_default_tools();
-    static bool init_default_tools;
+    std::unordered_map<std::string, std::function<nlohmann::json(const std::unordered_map<std::string, std::string>&)>> tools_;
 };
 
 } // namespace agenticdsl

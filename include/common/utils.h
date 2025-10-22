@@ -1,121 +1,74 @@
-#ifndef AGENFLOW_UTILS_H
-#define AGENFLOW_UTILS_H
+#ifndef AGENTICDSL_COMMON_UTILS_H
+#define AGENTICDSL_COMMON_UTILS_H
 
 #include "types.h"
 #include <string>
-#include <sstream>
 #include <vector>
 #include <regex>
-#include <filesystem>
+#include <nlohmann/json.hpp>
 
 namespace agenticdsl {
 
-// 从字符串中提取 ```yaml ... ``` 代码块
-inline std::string extract_yaml_block(const std::string& text) {
-    std::regex yaml_pattern(R"(```\s*yaml\s*\n(.*?)\n```)", std::regex_constants::dotall);
-    std::smatch match;
-    if (std::regex_search(text, match, yaml_pattern)) {
-        return match[1].str();
-    }
-    return "";
-}
-
-// 从 Markdown 内容中提取路径化块
 inline std::vector<std::pair<NodePath, std::string>> extract_pathed_blocks(const std::string& markdown_content) {
     std::vector<std::pair<NodePath, std::string>> blocks;
-    std::regex block_header_pattern(R"(###\s+AgenticDSL\s+`(/[\w/\-]*)`)");
-    std::regex yaml_content_pattern(R"(\# --- BEGIN AgenticDSL ---\s*\n(.*?)\n\# --- END AgenticDSL ---)", std::regex_constants::dotall);
 
-    std::istringstream iss(markdown_content);
-    std::string line;
-    std::string current_path;
-    std::string current_content;
-    bool in_block = false;
+    // Use [\s\S] instead of . to match any character including newlines
+    std::regex block_pattern(
+        R"(###\s+AgenticDSL\s+`(/[\w/\-]+)`\s*\n"
+        R"(# --- BEGIN AgenticDSL ---\s*\n([\s\S]*?)\n"
+        R"(# --- END AgenticDSL ---))"
+    );
 
-    while (std::getline(iss, line)) {
-        std::smatch header_match;
-        if (std::regex_match(line, header_match, block_header_pattern)) {
-            if (in_block && !current_path.empty()) {
-                blocks.push_back({current_path, current_content});
-            }
-            current_path = header_match[1].str();
-            current_content.clear();
-            in_block = true;
-        } else if (in_block) {
-            std::smatch yaml_match;
-            if (std::regex_match(line, yaml_match, yaml_content_pattern)) {
-                 current_content = yaml_match[1].str();
-                 in_block = false;
-            } else {
-                current_content += line + "\n";
-            }
-        }
-    }
+    std::sregex_iterator iter(markdown_content.begin(), markdown_content.end(), block_pattern);
+    std::sregex_iterator end;
 
-    // Add the last block
-    if (!current_path.empty() && !current_content.empty()) {
-        blocks.push_back({current_path, current_content});
+    for (; iter != end; ++iter) {
+        std::string path = (*iter)[1].str();
+        std::string yaml_content = (*iter)[2].str();
+        blocks.emplace_back(std::move(path), std::move(yaml_content));
     }
 
     return blocks;
 }
 
-// 检查 Context 中是否存在嵌套路径 (e.g., "user.profile.name")
-inline bool context_has_path(const Context& ctx, const std::string& path) {
-    std::istringstream iss(path);
-    std::string segment;
-    std::getline(iss, segment, '.');
-    
-    auto current = ctx;
-    if (current.contains(segment)) {
-        current = current[segment];
-    } else {
-        return false;
-    }
-
-    while (std::getline(iss, segment, '.')) {
-        if (current.is_object() && current.contains(segment)) {
-            current = current[segment];
-        } else {
-            return false;
-        }
-    }
-    return true;
+// Validate node path format: must start with / and contain only allowed chars
+inline bool is_valid_node_path(const std::string& path) {
+    if (path.empty() || path[0] != '/') return false;
+    std::regex valid(R"(^/[\w/\-]+$)");
+    return std::regex_match(path, valid);
 }
 
-// 从 Context 中获取嵌套路径的值 (e.g., "user.profile.name")
-inline nlohmann::json get_context_value(const Context& ctx, const std::string& path) {
-    std::istringstream iss(path);
-    std::string segment;
-    std::getline(iss, segment, '.');
-    
-    auto current = ctx;
-    if (current.contains(segment)) {
-        current = current[segment];
-    } else {
-        return nlohmann::json(); // Return null if path not found
+// Parse output_keys (string or array) from JSON
+inline std::vector<std::string> parse_output_keys(const nlohmann::json& node_json, const NodePath& path) {
+    if (!node_json.contains("output_keys")) {
+        throw std::runtime_error("Missing 'output_keys' in node: " + path);
     }
-
-    while (std::getline(iss, segment, '.')) {
-        if (current.is_object() && current.contains(segment)) {
-            current = current[segment];
-        } else {
-            return nlohmann::json(); // Return null if path not found
+    const auto& ok = node_json["output_keys"];
+    if (ok.is_string()) {
+        return {ok.get<std::string>()};
+    } else if (ok.is_array()) {
+        std::vector<std::string> keys;
+        for (const auto& k : ok) {
+            keys.push_back(k.get<std::string>());
         }
+        return keys;
+    } else {
+        throw std::runtime_error("'output_keys' must be string or array in node: " + path);
     }
-    return current;
 }
 
-// 检查字符串是否为有效的 JSON
-inline bool is_valid_json(const std::string& str) {
-    try {
-        nlohmann::json::parse(str);
-        return true;
-    } catch (const nlohmann::json::parse_error&) {
-        return false;
-    }
+// Parse ResourceType from string
+inline ResourceType parse_resource_type(const std::string& type_str) {
+    if (type_str == "file") return ResourceType::FILE;
+    if (type_str == "postgres") return ResourceType::POSTGRES;
+    if (type_str == "mysql") return ResourceType::MYSQL;
+    if (type_str == "sqlite") return ResourceType::SQLITE;
+    if (type_str == "api_endpoint") return ResourceType::API_ENDPOINT;
+    if (type_str == "vector_store") return ResourceType::VECTOR_STORE;
+    if (type_str == "custom") return ResourceType::CUSTOM;
+    throw std::runtime_error("Unknown resource_type '" + type_str + "'");
 }
 
 } // namespace agenticdsl
 
-#endif
+#endif // AGENTICDSL_COMMON_UTILS_H

@@ -1,7 +1,8 @@
-#ifndef AGENFLOW_EXECUTOR_H
-#define AGENFLOW_EXECUTOR_H
+#ifndef AGENTICDSL_CORE_EXECUTOR_H
+#define AGENTICDSL_CORE_EXECUTOR_H
 
-#include "nodes.h"
+#include "agenticdsl/core/nodes.h"
+#include "agenticdsl/core/parser.h"
 #include "common/types.h"
 #include <vector>
 #include <unordered_map>
@@ -9,19 +10,17 @@
 
 namespace agenticdsl {
 
-class ModernFlowExecutor {
+class DAGFlowExecutor {
 public:
-    ModernFlowExecutor(std::vector<std::unique_ptr<Node>> nodes);
+    explicit DAGFlowExecutor(std::vector<ParsedGraph> main_graph);
     ExecutionResult execute(const Context& initial_context = Context{});
 
 private:
-    std::vector<std::unique_ptr<Node>> nodes_;
+    std::vector<std::unique_ptr<Node>> all_nodes_;
     std::unordered_map<NodePath, Node*> node_map_;
-
+    std::unordered_set<NodePath> executed_nodes_;
+    NodePath current_path_;
     Node* find_start_node() const;
-    Node* get_node(const NodePath& path) const;
-
-    static const size_t MAX_STEPS = 100; // 防止无限循环
 };
 
 } // namespace agenticdsl

@@ -1,124 +1,118 @@
 #include "agenticdsl/llm/llama_adapter.h"
 #include <stdexcept>
-#include <thread>
-#include <chrono>
-#include <iostream>
+#include <vector>
+#include <cstdlib>
 
 namespace agenticdsl {
 
-LlamaAdapter::LlamaAdapter(const Config& config) : config_(config) {
-    load_model();
-}
+LlamaAdapter::LlamaAdapter(const Config& config)
+    : config_(config),
+      model_(nullptr, llama_model_free),
+      ctx_(nullptr, llama_free),
+      sampler_(nullptr, llama_sampler_free) {
 
-LlamaAdapter::~LlamaAdapter() {
-    if (ctx_) {
-        llama_free(ctx_);
-    }
-    if (model_) {
-        llama_free_model(model_);
-    }
-}
-
-void LlamaAdapter::load_model() {
-    // 初始化llama参数
+    // Load model
     llama_model_params model_params = llama_model_default_params();
-    model_params.n_ctx = config_.n_ctx;
+    model_params.n_gpu_layers = 99; // Use all GPU layers if available
 
-    // 加载模型
-    model_ = llama_load_model_from_file(config_.model_path.c_str(), model_params);
-    if (!model_) {
+    llama_model* raw_model = llama_model_load_from_file(config_.model_path.c_str(), model_params);
+    if (!raw_model) {
         throw std::runtime_error("Failed to load model: " + config_.model_path);
     }
+    model_.reset(raw_model);
 
-    // 创建上下文
+    // Create context
     llama_context_params ctx_params = llama_context_default_params();
     ctx_params.n_ctx = config_.n_ctx;
     ctx_params.n_threads = config_.n_threads;
     ctx_params.n_threads_batch = config_.n_threads;
 
-    ctx_ = llama_new_context_with_model(model_, ctx_params);
-    if (!ctx_) {
-        llama_free_model(model_);
+    llama_context* raw_ctx = llama_init_from_model(model_.get(), ctx_params);
+    if (!raw_ctx) {
         throw std::runtime_error("Failed to create context");
     }
+    ctx_.reset(raw_ctx);
+
+    // Create sampler chain
+    auto smpl_params = llama_sampler_chain_default_params();
+    llama_sampler* raw_sampler = llama_sampler_chain_init(smpl_params);
+    llama_sampler_chain_add(raw_sampler, llama_sampler_init_min_p(config_.min_p, 1));
+    llama_sampler_chain_add(raw_sampler, llama_sampler_init_temp(config_.temperature));
+    llama_sampler_chain_add(raw_sampler, llama_sampler_init_dist(LLAMA_DEFAULT_SEED));
+    sampler_.reset(raw_sampler);
+}
+
+LlamaAdapter::~LlamaAdapter() = default;
+
+std::vector<llama_token> LlamaAdapter::tokenize(const std::string& text, bool add_bos) {
+    const llama_vocab* vocab = llama_model_get_vocab(model_.get());
+    int32_t n_tokens = llama_tokenize(vocab, text.data(), static_cast<int32_t>(text.size()),
+                                      nullptr, 0, add_bos, true);
+    if (n_tokens < 0) return {};
+
+    std::vector<llama_token> tokens(n_tokens);
+    if (llama_tokenize(vocab, text.data(), static_cast<int32_t>(text.size()),
+                       tokens.data(), n_tokens, add_bos, true) < 0) {
+        return {};
+    }
+    return tokens;
+}
+
+std::string LlamaAdapter::detokenize(llama_token token) {
+    const llama_vocab* vocab = llama_model_get_vocab(model_.get());
+    char buf[256] = {0};
+    int n = llama_token_to_piece(vocab, token, buf, sizeof(buf) - 1, 0, true);
+    if (n < 0) return "";
+    return std::string(buf, n);
 }
 
 std::string LlamaAdapter::generate(const std::string& prompt) {
     if (!is_loaded()) {
-        return "[ERROR] Model not loaded";
+        throw std::runtime_error("Model not loaded");
     }
 
-    // 简化的生成逻辑
-    // 实际实现会更复杂，包括tokenization, generation loop等
-    std::vector<llama_token> tokens_list;
-    tokens_list.resize(prompt.size() + 256); // 预分配空间
+    // Check if context is empty (first call)
+    bool is_first = llama_memory_seq_pos_max(llama_get_memory(ctx_.get()), 0) == -1;
 
-    // Tokenize输入
-    int n_prompt_tokens = llama_tokenize(model_, prompt.c_str(), tokens_list.data(),
-                                        static_cast<int>(tokens_list.size()), true);
-
-    if (n_prompt_tokens < 0) {
-        return "[ERROR] Failed to tokenize prompt";
+    auto tokens = tokenize(prompt, is_first);
+    if (tokens.empty()) {
+        throw std::runtime_error("Tokenization failed");
     }
 
-    // 设置KV cache
-    llama_set_rng_seed(ctx_, 1234); // 设置随机种子
+    // Prepare batch
+    llama_batch batch = llama_batch_get_one(tokens.data(), static_cast<int32_t>(tokens.size()));
 
-    // 推理
-    for (int i = 0; i < n_prompt_tokens - 1; i++) {
-        llama_decode(ctx_, llama_batch_get_one(&tokens_list[i], 1, i, 0));
+    // Decode prompt
+    if (llama_decode(ctx_.get(), batch)) {
+        throw std::runtime_error("Prompt evaluation failed");
     }
 
-    // 生成响应
     std::string response;
-    for (int i = 0; i < config_.n_predict; i++) {
-        llama_token id = 0;
+    for (int i = 0; i < config_.n_predict; ++i) {
+        llama_token new_token = llama_sampler_sample(sampler_.get(), ctx_.get(), -1);
 
-        // 获取最后一个token的logits
-        auto logits = llama_get_logits_ith(ctx_, n_prompt_tokens - 1 + i);
-        auto n_vocab = llama_n_vocab(model_);
-
-        // 采样下一个token (简化版)
-        id = llama_sample_token_greedy(ctx_, logits);
-
-        if (id == llama_token_eos(model_)) {
+        if (llama_vocab_is_eog(llama_model_get_vocab(model_.get()), new_token)) {
             break;
         }
 
-        // 解码token
-        char buf[8] = {0};
-        llama_token_to_piece(model_, id, buf, sizeof(buf), 0, true);
-        response += buf;
+        std::string piece = detokenize(new_token);
+        response += piece;
 
-        // 解码下一个token
-        llama_decode(ctx_, llama_batch_get_one(&id, 1, n_prompt_tokens + i, 0));
+        // Prepare next token
+        batch = llama_batch_get_one(&new_token, 1);
+        if (llama_decode(ctx_.get(), batch)) {
+            break;
+        }
     }
+
+    // Reset sampler state for next call
+    llama_sampler_reset(sampler_.get());
 
     return response;
 }
 
-std::vector<std::string> LlamaAdapter::generate_batch(const std::vector<std::string>& prompts) {
-    std::vector<std::string> results;
-    results.reserve(prompts.size());
-
-    for (const auto& prompt : prompts) {
-        results.push_back(generate(prompt));
-    }
-
-    return results;
-}
-
 bool LlamaAdapter::is_loaded() const {
-    return model_ != nullptr && ctx_ != nullptr;
-}
-
-std::string LlamaAdapter::get_context() {
-    if (!is_loaded()) {
-        return "[ERROR] Context not available, model not loaded";
-    }
-    // This is a simplified representation, llama.cpp doesn't provide a direct way
-    // to dump the full context as a string. This is just a placeholder.
-    return "[CONTEXT DUMP - IMPLEMENTATION DEPENDENT]";
+    return model_ != nullptr && ctx_ != nullptr && sampler_ != nullptr;
 }
 
 } // namespace agenticdsl

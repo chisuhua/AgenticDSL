@@ -1,23 +1,88 @@
 #include "agenticdsl/tools/registry.h"
+#include <stdexcept>
 #include <limits>
 
 namespace agenticdsl {
 
 ToolRegistry& ToolRegistry::instance() {
     static ToolRegistry registry;
+    static bool initialized = false;
+    if (!initialized) {
+        registry.register_default_tools();
+        initialized = true;
+    }
     return registry;
 }
 
-bool ToolRegistry::has_tool(std::string_view name) const {
-    return tools_.find(std::string(name)) != tools_.end();
+void ToolRegistry::register_default_tools() {
+    register_tool("web_search", [](const std::unordered_map<std::string, std::string>& args) -> nlohmann::json {
+        auto it = args.find("query");
+        std::string query = (it != args.end()) ? it->second : "default query";
+        return nlohmann::json{{"results", "[MOCK] Search results for: " + query}};
+    });
+
+    register_tool("get_weather", [](const std::unordered_map<std::string, std::string>& args) -> nlohmann::json {
+        auto it = args.find("location");
+        std::string loc = (it != args.end()) ? it->second : "unknown";
+        return nlohmann::json{
+            {"location", loc},
+            {"condition", "Sunny"},
+            {"temperature_c", 22}
+        };
+    });
+
+    register_tool("calculate", [](const std::unordered_map<std::string, std::string>& args) -> nlohmann::json {
+        auto a_it = args.find("a");
+        auto b_it = args.find("b");
+        auto op_it = args.find("op");
+
+        if (a_it == args.end() || b_it == args.end() || op_it == args.end()) {
+            return nlohmann::json{{"error", "Missing arguments: a, b, op"}};
+        }
+
+        try {
+            double a = std::stod(a_it->second);
+            double b = std::stod(b_it->second);
+            std::string op = op_it->second;
+
+            if (op == "/" && b == 0.0) {
+                return nlohmann::json{{"error", "Division by zero"}};
+            }
+
+            double result = 0.0;
+            if (op == "+") result = a + b;
+            else if (op == "-") result = a - b;
+            else if (op == "*") result = a * b;
+            else if (op == "/") result = a / b;
+            else return nlohmann::json{{"error", "Unsupported operator: " + op}};
+
+            return nlohmann::json{{"result", result}};
+        } catch (const std::exception& e) {
+            return nlohmann::json{{"error", "Invalid number format"}};
+        }
+    });
 }
 
-nlohmann::json ToolRegistry::call_tool(std::string_view name, const std::unordered_map<std::string, std::string>& args) {
-    auto it = tools_.find(std::string(name));
+template<typename Func>
+void ToolRegistry::register_tool(std::string name, Func&& func) {
+    tools_[std::move(name)] = std::forward<Func>(func);
+}
+
+bool ToolRegistry::has_tool(const std::string& name) const {
+    return tools_.count(name) > 0;
+}
+
+nlohmann::json ToolRegistry::call_tool(const std::string& name, const std::unordered_map<std::string, std::string>& args) {
+    auto it = tools_.find(name);
     if (it == tools_.end()) {
-        throw std::runtime_error("Tool '" + std::string(name) + "' not found");
+        return nlohmann::json{{"error", "Tool not found: " + name}};
     }
-    return it->second(args);
+
+    try {
+        return it->second(args);
+    } catch (const std::exception& e) {
+        return nlohmann::json{{"error", std::string("Tool execution failed: ") + e.what()}};
+    }
 }
 
 std::vector<std::string> ToolRegistry::list_tools() const {
@@ -28,45 +93,5 @@ std::vector<std::string> ToolRegistry::list_tools() const {
     }
     return names;
 }
-
-bool ToolRegistry::register_default_tools() {
-    instance().register_tool("web_search", [](const std::unordered_map<std::string, std::string>& args) -> nlohmann::json {
-        auto query_it = args.find("query");
-        std::string query = query_it != args.end() ? query_it->second : "default query";
-        return std::string("[MOCK] Search results for: ") + query;
-    });
-
-    instance().register_tool("get_weather", [](const std::unordered_map<std::string, std::string>& args) -> nlohmann::json {
-        auto location_it = args.find("location");
-        std::string location = location_it != args.end() ? location_it->second : "unknown";
-        return std::string("[MOCK] Weather in ") + location + ": Sunny, 22°C";
-    });
-
-    instance().register_tool("calculate", [](const std::unordered_map<std::string, std::string>& args) -> nlohmann::json {
-        auto a_it = args.find("a");
-        auto b_it = args.find("b");
-        auto op_it = args.find("op");
-
-        if (a_it == args.end() || b_it == args.end() || op_it == args.end()) {
-            return std::string("[ERROR] Missing arguments for calculate tool");
-        }
-
-        double a = std::stod(a_it->second);
-        double b = std::stod(b_it->second);
-        std::string op = op_it->second;
-
-        double result = 0.0;
-        if (op == "+") result = a + b;
-        else if (op == "-") result = a - b;
-        else if (op == "*") result = a * b;
-        else if (op == "/") result = (b != 0.0) ? a / b : std::numeric_limits<double>::quiet_NaN();
-
-        return result;
-    });
-
-    return true;
-}
-
-bool ToolRegistry::init_default_tools = ToolRegistry::register_default_tools();
 
 } // namespace agenticdsl

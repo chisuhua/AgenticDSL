@@ -1,31 +1,30 @@
-#ifndef AGENFLOW_SPEC_H
-#define AGENFLOW_SPEC_H
+#ifndef AGENTICDSL_DSL_SPEC_H
+#define AGENTICDSL_DSL_SPEC_H
 
-#include "common/types.h"
-#include <string>
-#include <vector>
 #include <nlohmann/json.hpp>
+#include <string>
 
 namespace agenticdsl {
 
-class DSLValidator {
+/**
+ * 注意：不校验 path（路径由解析器提供），不校验 next 引用存在性（图级校验）
+ */
+class NodeValidator {
 public:
-    static bool validate_nodes(const std::vector<nlohmann::json>& nodes_json);
-    static bool validate_node_type(const nlohmann::json& node_json);
-    static bool validate_graph_structure(const std::vector<nlohmann::json>& nodes_json);
-
-    // v1.1: New validators
-    static bool validate_resource_node(const nlohmann::json& node_json);
-    static bool validate_path(const std::string& path);
+    static void validate(const nlohmann::json& node_json);
+    static void validate_type(const std::string& type);
 
 private:
-    static bool validate_start_node(const nlohmann::json& node_json);
-    static bool validate_end_node(const nlohmann::json& node_json);
-    static bool validate_assign_node(const nlohmann::json& node_json); // v1.1: renamed from set
-    static bool validate_llm_call_node(const nlohmann::json& node_json);
-    static bool validate_tool_call_node(const nlohmann::json& node_json);
+    static void validate_start(const nlohmann::json& node);
+    static void validate_end(const nlohmann::json& node);
+    static void validate_assign(const nlohmann::json& node);
+    static void validate_llm_call(const nlohmann::json& node);
+    static void validate_tool_call(const nlohmann::json& node);
+    static void validate_resource(const nlohmann::json& node);
+    static void validate_output_keys(const nlohmann::json& node);
+    static void validate_next(const nlohmann::json& node);
 };
 
 } // namespace agenticdsl
 
-#endif
+#endif // AGENTICDSL_DSL_SPEC_H

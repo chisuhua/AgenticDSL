@@ -28,7 +28,7 @@
 └───────────────▲──────────────────────┘
                 │ uses as execution backend
 ┌───────────────┴──────────────────────┐
-│        AgenticFlow Core              │ ← 本项目
+│        AgenticDSL Core               │ ← 本项目
 │                                      │
 │  ┌─────────────┐    ┌─────────────┐  │
 │  │  Compiler   │    │  Executor   │  │

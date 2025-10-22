@@ -21,7 +21,6 @@ public:
     std::vector<ParsedGraph> parse_from_file(const std::string& file_path);
 
 private:
-    std::vector<std::pair<NodePath, std::string>> extract_pathed_blocks(const std::string& content);
     std::unique_ptr<Node> create_node_from_json(const NodePath& path, const nlohmann::json& node_json);
     void validate_nodes(const std::vector<std::unique_ptr<Node>>& nodes);
 };

@@ -1,7 +1,7 @@
 #include "agenticdsl/core/parser.h"
 #include "agenticdsl/core/nodes.h"
-#include "agenticdsl/dsl/spec.h"
-#include "common/utils.h" // v1.1: New include
+#include "common/utils.h" // v1.1: corrected include
+#include <fstream>
 #include <sstream>
 #include <stdexcept>
 #include <nlohmann/json.hpp>
@@ -10,44 +10,61 @@ namespace agenticdsl {
 
 std::vector<ParsedGraph> MarkdownParser::parse_from_string(const std::string& markdown_content) {
     std::vector<ParsedGraph> graphs;
+    auto pathed_blocks = extract_pathed_blocks(markdown_content);
 
-    auto pathed_blocks = extract_pathed_blocks(markdown_content); // v1.1: Use new utility
     for (auto& [path, yaml_content] : pathed_blocks) {
-        try {
-            nlohmann::json json_doc = nlohmann::json::parse(yaml_content);
+        if (!is_valid_node_path(path)) {
+            throw std::runtime_error("Invalid node path format: " + path);
+        }
 
-            // Check if it's a subgraph definition (v1.1)
-            if (json_doc.contains("graph_type") && json_doc["graph_type"] == "subgraph") {
-                 ParsedGraph graph;
-                 graph.path = path;
-                 if (json_doc.contains("metadata")) {
-                     graph.metadata = json_doc["metadata"];
-                 }
-                 // Subgraph nodes are handled differently or ignored in v1
-                 // For simplicity, we might parse the 'entry' node and its direct successors here if needed
-                 // For now, let's focus on top-level nodes
-                 continue; // Skip subgraph definitions for now
+        try {
+            auto json_doc = nlohmann::json::parse(yaml_content);
+
+            // Handle file-level metadata (e.g., /__meta__)
+            if (path == "/__meta__") {
+                // Optional: store in global metadata
+                continue;
             }
 
-            // Assume it's a node definition
+            // Handle subgraph (e.g., /main)
+            if (json_doc.contains("graph_type") && json_doc["graph_type"] == "subgraph") {
+                ParsedGraph graph;
+                graph.path = path;
+                graph.metadata = json_doc.value("metadata", nlohmann::json::object());
+
+                if (json_doc.contains("nodes") && json_doc["nodes"].is_array()) {
+                    for (const auto& node_json : json_doc["nodes"]) {
+                        std::string id = node_json.value("id", "");
+                        if (id.empty()) {
+                            throw std::runtime_error("Node in subgraph '" + path + "' missing 'id'");
+                        }
+                        NodePath node_path = path + "/" + id;
+                        auto node = create_node_from_json(node_path, node_json);
+                        if (node) {
+                            graph.nodes.push_back(std::move(node));
+                        }
+                    }
+                }
+                graphs.push_back(std::move(graph));
+                continue;
+            }
+
+            // Handle single node
             if (json_doc.contains("type")) {
                 auto node = create_node_from_json(path, json_doc);
                 if (node) {
                     ParsedGraph graph;
-                    graph.nodes.push_back(std::move(node));
                     graph.path = path;
-                    if (json_doc.contains("metadata")) {
-                        graph.metadata = json_doc["metadata"];
-                    }
+                    graph.metadata = json_doc.value("metadata", nlohmann::json::object());
+                    graph.nodes.push_back(std::move(node));
                     graphs.push_back(std::move(graph));
                 }
             }
+
         } catch (const nlohmann::json::parse_error& e) {
-            // If parsing fails, skip this block
-            continue;
+            throw std::runtime_error("JSON parse error in block '" + path + "': " + std::string(e.what()));
         } catch (const std::exception& e) {
-            // Log or handle other errors during node creation
-            continue;
+            throw std::runtime_error("Error parsing block '" + path + "': " + std::string(e.what()));
         }
     }
 
@@ -62,112 +79,71 @@ std::vector<ParsedGraph> MarkdownParser::parse_from_file(const std::string& file
 
     std::stringstream buffer;
     buffer << file.rdbuf();
-    std::string content = buffer.str();
-
-    return parse_from_string(content);
+    return parse_from_string(buffer.str());
 }
 
 std::unique_ptr<Node> MarkdownParser::create_node_from_json(const NodePath& path, const nlohmann::json& node_json) {
-    std::string type_str = node_json["type"];
+    std::string type_str = node_json.at("type").get<std::string>();
 
+    // Parse next
     std::vector<NodePath> next_paths;
     if (node_json.contains("next")) {
-        if (node_json["next"].is_string()) {
-            next_paths.push_back(node_json["next"]);
-        } else if (node_json["next"].is_array()) {
-            for (auto& next_path : node_json["next"]) {
-                next_paths.push_back(next_path.get<std::string>());
+        const auto& next = node_json["next"];
+        if (next.is_string()) {
+            next_paths.push_back(next.get<std::string>());
+        } else if (next.is_array()) {
+            for (const auto& np : next) {
+                next_paths.push_back(np.get<std::string>());
             }
         }
     }
 
-    nlohmann::json metadata = nlohmann::json::object();
-    if (node_json.contains("metadata") && node_json["metadata"].is_object()) {
-        metadata = node_json["metadata"];
-    }
+    // Parse metadata
+    nlohmann::json metadata = node_json.value("metadata", nlohmann::json::object());
 
     if (type_str == "start") {
-        auto node = std::make_unique<StartNode>(std::move(path), std::move(next_paths));
-        node->metadata = metadata;
-        return std::move(node);
+        return std::make_unique<StartNode>(path, std::move(next_paths));
     } else if (type_str == "end") {
-        auto node = std::make_unique<EndNode>(std::move(path));
+        auto node = std::make_unique<EndNode>(path);
         node->metadata = metadata;
-        return std::move(node);
-    } else if (type_str == "assign") { // v1.1: renamed from set
+        return node;
+    } else if (type_str == "assign") {
         std::unordered_map<std::string, std::string> assign;
         if (node_json.contains("assign") && node_json["assign"].is_object()) {
             for (auto& [key, value] : node_json["assign"].items()) {
                 assign[key] = value.get<std::string>();
             }
         }
-        auto node = std::make_unique<AssignNode>(std::move(path), std::move(assign), std::move(next_paths));
-        node->metadata = metadata;
-        return std::move(node);
+        return std::make_unique<AssignNode>(path, std::move(assign), std::move(next_paths));
     } else if (type_str == "llm_call") {
-        std::string prompt = node_json["prompt_template"];
-        std::vector<std::string> output_keys;
-        if (node_json["output_keys"].is_string()) {
-            output_keys.push_back(node_json["output_keys"]);
-        } else if (node_json["output_keys"].is_array()) {
-            for (auto& key : node_json["output_keys"]) {
-                output_keys.push_back(key.get<std::string>());
-            }
-        } else {
-            // Handle case where output_keys is missing or not a string/array
-            // For v1 compatibility, assume a default key or throw error
-            throw std::runtime_error("Invalid or missing output_keys for llm_call node: " + path);
-        }
-        auto node = std::make_unique<LLMCallNode>(std::move(path), std::move(prompt), std::move(output_keys), std::move(next_paths));
-        node->metadata = metadata;
-        return std::move(node);
+        std::string prompt = node_json.at("prompt_template").get<std::string>();
+        auto output_keys = parse_output_keys(node_json, path);
+        return std::make_unique<LLMCallNode>(path, std::move(prompt), std::move(output_keys), std::move(next_paths));
     } else if (type_str == "tool_call") {
-        std::string tool = node_json["tool"];
-        std::string output_key_str = node_json["output_keys"]; // v1.1: renamed from output_key
-        std::vector<std::string> output_keys;
-        if (node_json["output_keys"].is_string()) {
-            output_keys.push_back(node_json["output_keys"]);
-        } else if (node_json["output_keys"].is_array()) {
-            for (auto& key : node_json["output_keys"]) {
-                output_keys.push_back(key.get<std::string>());
-            }
-        } else {
-            throw std::runtime_error("Invalid or missing output_keys for tool_call node: " + path);
-        }
+        std::string tool = node_json.at("tool").get<std::string>();
+        auto output_keys = parse_output_keys(node_json, path);
         std::unordered_map<std::string, std::string> args;
-        if (node_json.contains("arguments") && node_json["arguments"].is_object()) { // v1.1: renamed from args
+        if (node_json.contains("arguments") && node_json["arguments"].is_object()) {
             for (auto& [key, value] : node_json["arguments"].items()) {
                 args[key] = value.get<std::string>();
             }
         }
-        auto node = std::make_unique<ToolCallNode>(std::move(path), std::move(tool), std::move(args), std::move(output_keys), std::move(next_paths));
-        node->metadata = metadata;
-        return std::move(node);
-    } else if (type_str == "resource") { // v1.1: new node type
-        ResourceType resource_type;
-        std::string type_str_lower = node_json["resource_type"];
-        if (type_str_lower == "file") resource_type = ResourceType::FILE;
-        else if (type_str_lower == "postgres") resource_type = ResourceType::POSTGRES;
-        else if (type_str_lower == "mysql") resource_type = ResourceType::MYSQL;
-        else if (type_str_lower == "sqlite") resource_type = ResourceType::SQLITE;
-        else if (type_str_lower == "api_endpoint") resource_type = ResourceType::API_ENDPOINT;
-        else if (type_str_lower == "vector_store") resource_type = ResourceType::VECTOR_STORE;
-        else resource_type = ResourceType::CUSTOM; // Fallback
-
-        std::string uri = node_json["uri"];
-        std::string scope = node_json.value("scope", "global"); // Default to global
-
-        auto node = std::make_unique<ResourceNode>(std::move(path), resource_type, std::move(uri), std::move(scope));
-        node->metadata = metadata;
-        return std::move(node);
+        return std::make_unique<ToolCallNode>(path, std::move(tool), std::move(args), std::move(output_keys), std::move(next_paths));
+    } else if (type_str == "resource") {
+        std::string type_str_lower = node_json.at("resource_type").get<std::string>();
+        ResourceType rtype = parse_resource_type(type_str_lower);
+        std::string uri = node_json.at("uri").get<std::string>();
+        std::string scope = node_json.value("scope", std::string("global"));
+        return std::make_unique<ResourceNode>(path, rtype, std::move(uri), std::move(scope), metadata);
     }
 
-    return nullptr; // Unknown type
+    // Unknown type: ignore (forward-compatible per spec)
+    return nullptr;
 }
 
 void MarkdownParser::validate_nodes(const std::vector<std::unique_ptr<Node>>& nodes) {
-    // Implement validation logic if needed
-    // For now, rely on DSLValidator
+    // Optional: implement validation (e.g., path uniqueness, next existence)
+    // For v1, rely on executor-level validation
 }
 
 } // namespace agenticdsl

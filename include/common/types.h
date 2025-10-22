@@ -50,6 +50,7 @@ struct ExecutionResult {
     bool success;
     std::string message; // 错误信息或成功信息
     Context final_context; // 执行结束时的上下文
+    std::optional<NodePath> paused_at; // set if paused at llm_call
 };
 
 // 资源定义
