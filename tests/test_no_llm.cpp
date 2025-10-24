@@ -1,5 +1,4 @@
-// tests/test_v11_no_llm.cpp
-#define CATCH_CONFIG_MAIN
+// tests/test_no_llm.cpp
 #include "catch_amalgamated.hpp"
 #include "agenticdsl/core/engine.h"
 #include "agenticdsl/tools/registry.h"
@@ -24,19 +23,19 @@ static struct ToolRegistrar {
 TEST_CASE("Execute Assign + ToolCall Workflow", "[engine][executor]") {
     std::string markdown = R"(
 ### AgenticDSL `/main`
+```yaml
 # --- BEGIN AgenticDSL ---
 graph_type: subgraph
-entry: start
 nodes:
   - id: start
     type: start
-    next: [prepare]
+    next: ["/main/prepare"]
   - id: prepare
     type: assign
     assign:
       num1: "15"
       num2: "27"
-    next: [compute]
+    next: ["/main/compute"]
   - id: compute
     type: tool_call
     tool: calculate
@@ -45,13 +44,14 @@ nodes:
       b: "{{ num2 }}"
       op: "+"
     output_keys: "sum_result"
-    next: [end]
+    next: ["/main/end"]
   - id: end
     type: end
 # --- END AgenticDSL ---
+```
 )";
 
-    auto engine = AgenticDSLEngine::from_markdown(markdown);
+    auto engine = DSLEngine::from_markdown(markdown);
     Context ctx;
     auto result = engine->run(ctx);
 
@@ -63,26 +63,27 @@ nodes:
 TEST_CASE("Execute Assign with Inja Functions", "[templates][assign]") {
     std::string markdown = R"(
 ### AgenticDSL `/main`
+```yaml
 # --- BEGIN AgenticDSL ---
 graph_type: subgraph
-entry: start
 nodes:
   - id: start
     type: start
-    next: [process]
+    next: ["/main/process"]
   - id: process
     type: assign
     assign:
       user_greeting: "Hello, {{ default(user.name, 'Guest') }}!"
       item_count: "{{ length(items) }}"
       is_empty: "{{ not exists(items) or length(items) == 0 }}"
-    next: [end]
+    next: ["/main/end"]
   - id: end
     type: end
 # --- END AgenticDSL ---
+```
 )";
 
-    auto engine = AgenticDSLEngine::from_markdown(markdown);
+    auto engine = DSLEngine::from_markdown(markdown);
     Context ctx;
     ctx["user"]["name"] = "Alice";
     ctx["items"] = nlohmann::json::array({"apple", "banana"});
@@ -97,32 +98,36 @@ nodes:
 TEST_CASE("Resource Node Injection", "[resources]") {
     std::string markdown = R"(
 ### AgenticDSL `/resources/config`
+```yaml
 # --- BEGIN AgenticDSL ---
 type: resource
 resource_type: file
 uri: "/app/config.json"
 scope: global
 # --- END AgenticDSL ---
+```
 
 ### AgenticDSL `/main`
+```yaml
 # --- BEGIN AgenticDSL ---
 graph_type: subgraph
-entry: start
 nodes:
   - id: start
     type: start
-    next: [use_resource]
+    next: ["/resources/config", "/main/use_resource"]
   - id: use_resource
     type: assign
     assign:
       config_path: "{{ resources.config.uri }}"
-    next: [end]
+    wait_for: ["/resources/config"]
+    next: ["/main/end"]
   - id: end
     type: end
 # --- END AgenticDSL ---
+```
 )";
 
-    auto engine = AgenticDSLEngine::from_markdown(markdown);
+    auto engine = DSLEngine::from_markdown(markdown);
     Context ctx;
     auto result = engine->run(ctx);
 

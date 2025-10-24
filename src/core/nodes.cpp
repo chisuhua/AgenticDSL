@@ -1,16 +1,20 @@
 #include "agenticdsl/core/nodes.h"
 #include "agenticdsl/dsl/templates.h"
 #include "agenticdsl/tools/registry.h"
+#include "agenticdsl/llm/prompt_builder.h"
 #include "agenticdsl/llm/llama_adapter.h"
 #include "agenticdsl/resources/manager.h"
-
 #include <inja/inja.hpp>
 #include <stdexcept>
 #include <string>
+#include <memory>
 
 namespace agenticdsl {
 
+// ————————————————————————
 // StartNode
+// ————————————————————————
+
 StartNode::StartNode(NodePath path, std::vector<NodePath> next_paths)
     : Node(std::move(path), NodeType::START, std::move(next_paths)) {}
 
@@ -18,7 +22,16 @@ Context StartNode::execute(Context& context) {
     return context;
 }
 
+std::unique_ptr<Node> StartNode::clone() const {
+    auto node = std::make_unique<StartNode>(path, next);
+    node->metadata = metadata;
+    return node;
+}
+
+// ————————————————————————
 // EndNode
+// ————————————————————————
+
 EndNode::EndNode(NodePath path)
     : Node(std::move(path), NodeType::END) {}
 
@@ -26,7 +39,17 @@ Context EndNode::execute(Context& context) {
     return context;
 }
 
+std::unique_ptr<Node> EndNode::clone() const {
+    auto node = std::make_unique<EndNode>(path);
+    node->next = next;
+    node->metadata = metadata;
+    return node;
+}
+
+// ————————————————————————
 // AssignNode
+// ————————————————————————
+
 AssignNode::AssignNode(NodePath path,
                        std::unordered_map<std::string, std::string> assigns,
                        std::vector<NodePath> next_paths)
@@ -46,7 +69,16 @@ Context AssignNode::execute(Context& context) {
     return new_context;
 }
 
+std::unique_ptr<Node> AssignNode::clone() const {
+    auto node = std::make_unique<AssignNode>(path, assign, next);
+    node->metadata = metadata;
+    return node;
+}
+
+// ————————————————————————
 // LLMCallNode
+// ————————————————————————
+
 LLMCallNode::LLMCallNode(NodePath path,
                          std::string prompt,
                          std::vector<std::string> output_keys,
@@ -62,21 +94,36 @@ LLMCallNode::LLMCallNode(NodePath path,
 Context LLMCallNode::execute(Context& context) {
     Context new_context = context;
     try {
-        std::string rendered_prompt = InjaTemplateRenderer::render(prompt_template, context);
-        // TODO: Replace mock with real LLM call
-        std::string llm_response = "[MOCK] Generated response for prompt length: " +
-                                   std::to_string(rendered_prompt.length());
+        //std::string rendered_prompt = InjaTemplateRenderer::render(prompt_template, context);
+        std::string rendered_prompt = PromptBuilder::inject_libraries_into_prompt(prompt_template, context);
 
-        // v1.1: output_keys supports list, but LLM returns string → store in first key
+        std::string llm_response;
+        if (g_current_llm_adapter) {
+            llm_response = g_current_llm_adapter->generate(rendered_prompt);
+        } else {
+            llm_response = "[ERROR] LLM adapter not available";
+        }
+
+        // TODO: Replace mock with real LLM call via engine
+        //std::string llm_response = "[MOCK] Generated response for prompt length: " +
+        //                           std::to_string(rendered_prompt.length());
         new_context[output_keys[0]] = llm_response;
-
     } catch (const inja::RenderError& e) {
         throw std::runtime_error("Prompt template rendering failed: " + std::string(e.what()));
     }
     return new_context;
 }
 
+std::unique_ptr<Node> LLMCallNode::clone() const {
+    auto node = std::make_unique<LLMCallNode>(path, prompt_template, output_keys, next);
+    node->metadata = metadata;
+    return node;
+}
+
+// ————————————————————————
 // ToolCallNode
+// ————————————————————————
+
 ToolCallNode::ToolCallNode(NodePath path,
                            std::string tool_name,
                            std::unordered_map<std::string, std::string> arguments,
@@ -124,7 +171,16 @@ Context ToolCallNode::execute(Context& context) {
     return new_context;
 }
 
+std::unique_ptr<Node> ToolCallNode::clone() const {
+    auto node = std::make_unique<ToolCallNode>(path, tool_name, arguments, output_keys, next);
+    node->metadata = metadata;
+    return node;
+}
+
+// ————————————————————————
 // ResourceNode
+// ————————————————————————
+
 ResourceNode::ResourceNode(NodePath path,
                            ResourceType type,
                            std::string uri,
@@ -146,6 +202,11 @@ Context ResourceNode::execute(Context& context) {
     ResourceManager::instance().register_resource(resource);
 
     return context;
+}
+
+std::unique_ptr<Node> ResourceNode::clone() const {
+    auto node = std::make_unique<ResourceNode>(path, resource_type, uri, scope, metadata);
+    return node;
 }
 
 } // namespace agenticdsl

@@ -5,6 +5,8 @@
 
 namespace agenticdsl {
 
+LlamaAdapter* g_current_llm_adapter = nullptr;
+
 LlamaAdapter::LlamaAdapter(const Config& config)
     : config_(config),
       model_(nullptr, llama_model_free),

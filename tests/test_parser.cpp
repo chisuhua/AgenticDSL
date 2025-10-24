@@ -1,5 +1,4 @@
-// tests/test_v11_parser.cpp
-#define CATCH_CONFIG_MAIN
+// tests/test_parser.cpp
 #include "catch_amalgamated.hpp"
 #include "agenticdsl/core/parser.h"
 #include "agenticdsl/common/utils.h"
@@ -15,35 +14,37 @@ TEST_CASE("Parse Pathed Blocks", "[parser][utils]") {
 Some intro text.
 
 ### AgenticDSL `/main`
-
+```yaml
 # --- BEGIN AgenticDSL ---
 graph_type: subgraph
-entry: start
 nodes:
   - id: start
     type: start
-    next: [ask]
+    next: ["/main/ask"]
 # --- END AgenticDSL ---
+```
 
 More text.
 
 ### AgenticDSL `/main/ask`
-
+```yaml
 # --- BEGIN AgenticDSL ---
 type: llm_call
 prompt_template: "Hello {{ user.name }}!"
 output_keys: "greeting"
 next: "/main/end"
 # --- END AgenticDSL ---
+```
 
 ### AgenticDSL `/resources/db`
-
+```yaml
 # --- BEGIN AgenticDSL ---
 type: resource
 resource_type: postgres
 uri: "postgresql://localhost/test"
 scope: global
 # --- END AgenticDSL ---
+```
 )";
 
     auto blocks = extract_pathed_blocks(markdown);
@@ -142,22 +143,22 @@ metadata:
 TEST_CASE("Parse Subgraph", "[parser]") {
     std::string markdown = R"(
 ### AgenticDSL `/main`
-
+```yaml
 # --- BEGIN AgenticDSL ---
 graph_type: subgraph
-entry: start
 metadata:
   description: "Main workflow"
 nodes:
   - id: start
     type: start
-    next: [ask]
+    next: ["/main/ask"]
   - id: ask
     type: llm_call
     prompt_template: "What do you need?"
     output_keys: "user_request"
-    next: [end]
+    next: ["/main/end"]
 # --- END AgenticDSL ---
+```
 )";
 
     MarkdownParser parser;
@@ -210,12 +211,13 @@ arguments: {}
 TEST_CASE("Invalid Path Format", "[parser]") {
     std::string markdown = R"(
 ### AgenticDSL `invalid_path`
-
+```yaml
 # --- BEGIN AgenticDSL ---
 type: assign
 assign:
   x: "1"
 # --- END AgenticDSL ---
+```
 )";
 
     MarkdownParser parser;
@@ -237,4 +239,55 @@ prompt_template: "Test"
         parser.create_node_from_json("/bad", nlohmann::json::parse(yaml)),
         Catch::Contains("Missing 'output_keys'")
     );
+}
+
+TEST_CASE("Parse signature and permissions from subgraph", "[parser][stage3]") {
+    std::string markdown = R"(
+### AgenticDSL `/lib/math/add`
+```yaml
+# --- BEGIN AgenticDSL ---
+graph_type: subgraph
+signature: "(a: number, b: number) -> sum: number"
+permissions: ["file:read"]
+nodes:
+  - id: add
+    type: tool_call
+    tool: calculate
+    arguments: {a: "1", b: "2", op: "+"}
+    output_keys: ["sum"]
+    next: ["/end_soft"]
+# --- END AgenticDSL ---
+```
+)";
+    agenticdsl::MarkdownParser parser;
+    auto graphs = parser.parse_from_string(markdown);
+    REQUIRE(graphs.size() == 1);
+    auto& g = graphs[0];
+    REQUIRE(g.path == "/lib/math/add");
+    REQUIRE(g.signature == "(a: number, b: number) -> sum: number");
+    REQUIRE(g.permissions == std::vector<std::string>{"file:read"});
+    REQUIRE(g.is_standard_library == true);
+}
+
+TEST_CASE("Parse signature and permissions from single node", "[parser][stage3]") {
+    std::string markdown = R"(
+### AgenticDSL `/main/tool`
+```yaml
+# --- BEGIN AgenticDSL ---
+type: tool_call
+tool: web_search
+signature: "(query: string) -> results"
+permissions: ["network"]
+arguments: {query: "test"}
+output_keys: ["out"]
+next: ["/main/end"]
+# --- END AgenticDSL ---
+```
+)";
+    agenticdsl::MarkdownParser parser;
+    auto graphs = parser.parse_from_string(markdown);
+    REQUIRE(graphs.size() == 1);
+    auto* node = dynamic_cast<agenticdsl::ToolCallNode*>(graphs[0].nodes[0].get());
+    REQUIRE(node->signature == "(query: string) -> results");
+    REQUIRE(node->permissions == std::vector<std::string>{"network"});
 }

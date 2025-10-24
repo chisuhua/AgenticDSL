@@ -1,5 +1,6 @@
-#ifndef AGENICDSL_CORE_NODES_H
-#define AGENICDSL_CORE_NODES_H
+// agenticdsl/core/nodes.h
+#ifndef AGENTICDSL_CORE_NODES_H
+#define AGENTICDSL_CORE_NODES_H
 
 #include "common/types.h"
 #include <string>
@@ -19,29 +20,39 @@ struct Node {
     std::vector<NodePath> next;
     nlohmann::json metadata;
 
+    std::optional<std::string> signature;     // e.g., "(input: string) -> {result: number}"
+    std::vector<std::string> permissions;     // e.g., ["network", "file:read"]
+    //
     Node(NodePath path,
          NodeType type,
          std::vector<NodePath> next = {},
-         nlohmann::json metadata = nlohmann::json::object())
+         nlohmann::json metadata = nlohmann::json::object(),
+         std::optional<std::string> sig = std::nullopt,
+         std::vector<std::string> perms = {})
         : path(std::move(path)),
           type(type),
           next(std::move(next)),
-          metadata(std::move(metadata)) {}
+          metadata(std::move(metadata)),
+          signature(std::move(sig)),
+          permissions(std::move(perms)) {}
 
     virtual ~Node() = default;
     [[nodiscard]] virtual Context execute(Context& context) = 0;
+    virtual std::unique_ptr<Node> clone() const = 0; // ← 新增：支持深拷贝
 };
 
 // Start Node
 struct StartNode : public Node {
     StartNode(NodePath path, std::vector<NodePath> next_paths = {});
     [[nodiscard]] Context execute(Context& context) override;
+    std::unique_ptr<Node> clone() const override;
 };
 
 // End Node
 struct EndNode : public Node {
     EndNode(NodePath path);
     [[nodiscard]] Context execute(Context& context) override;
+    std::unique_ptr<Node> clone() const override;
 };
 
 // Assign Node (v1.1: renamed from Set)
@@ -52,6 +63,7 @@ struct AssignNode : public Node {
                std::unordered_map<std::string, std::string> assigns,
                std::vector<NodePath> next_paths = {});
     [[nodiscard]] Context execute(Context& context) override;
+    std::unique_ptr<Node> clone() const override;
 };
 
 // LLM Call Node
@@ -64,6 +76,7 @@ struct LLMCallNode : public Node {
                 std::vector<std::string> output_keys,
                 std::vector<NodePath> next_paths = {});
     [[nodiscard]] Context execute(Context& context) override;
+    std::unique_ptr<Node> clone() const override;
 };
 
 // Tool Call Node
@@ -78,6 +91,7 @@ struct ToolCallNode : public Node {
                  std::vector<std::string> output_keys,
                  std::vector<NodePath> next_paths = {});
     [[nodiscard]] Context execute(Context& context) override;
+    std::unique_ptr<Node> clone() const override;
 };
 
 // Resource Node (v1.1)
@@ -92,8 +106,9 @@ struct ResourceNode : public Node {
                  std::string scope = "global",
                  nlohmann::json metadata = nlohmann::json::object());
     [[nodiscard]] Context execute(Context& context) override;
+    std::unique_ptr<Node> clone() const override;
 };
 
 } // namespace agenticdsl
 
-#endif // AGENICDSL_CORE_NODES_H
+#endif // AGENTICDSL_CORE_NODES_H

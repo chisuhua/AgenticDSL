@@ -1,26 +1,26 @@
+// agenticdsl/core/executor.h
 #ifndef AGENTICDSL_CORE_EXECUTOR_H
 #define AGENTICDSL_CORE_EXECUTOR_H
 
-#include "agenticdsl/core/nodes.h"
+#include "agenticdsl/scheduler/topo_scheduler.h"
 #include "agenticdsl/core/parser.h"
 #include "common/types.h"
 #include <vector>
-#include <unordered_map>
 #include <memory>
 
 namespace agenticdsl {
 
-class DAGFlowExecutor {
+/**
+ * DAGExecutor: 基于 TopoScheduler 的 DAG 执行器（替代原 DAGFlowExecutor）
+ */
+class DAGExecutor {
 public:
-    explicit DAGFlowExecutor(std::vector<ParsedGraph> main_graph);
+    explicit DAGExecutor(const std::vector<ParsedGraph>& main_graph);
     ExecutionResult execute(const Context& initial_context = Context{});
 
 private:
-    std::vector<std::unique_ptr<Node>> all_nodes_;
-    std::unordered_map<NodePath, Node*> node_map_;
-    std::unordered_set<NodePath> executed_nodes_;
-    NodePath current_path_;
-    Node* find_start_node() const;
+    TopoScheduler scheduler_;
+    void load_graphs(const std::vector<ParsedGraph>& graphs);
 };
 
 } // namespace agenticdsl

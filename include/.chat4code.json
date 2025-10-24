@@ -1,0 +1,52 @@
+{
+  "default_extensions": [
+    ".cpp",
+    ".h",
+    ".cc",
+    ".hh"
+  ],
+  "language_map": {
+    ".cpp": "cpp",
+    ".cc": "cpp",
+    ".cxx": "cpp",
+    ".c": "c",
+    ".h": "cpp",
+    ".hh": "cpp",
+    ".hpp": "cpp",
+    ".py": "python",
+    ".java": "java",
+    ".js": "javascript",
+    ".ts": "typescript",
+    ".html": "html",
+    ".css": "css",
+    ".sql": "sql",
+    ".sh": "bash",
+    ".bash": "bash",
+    ".json": "json",
+    ".xml": "xml",
+    ".yaml": "yaml",
+    ".yml": "yaml",
+    ".go": "go",
+    ".rs": "rust",
+    ".swift": "swift"
+  },
+  "exclude_patterns": [
+    "*.log",
+    "*.tmp",
+    "node_modules/",
+    "*.backup*"
+  ],
+  "backup_enabled": true,
+  "metadata_dir": ".chat4code",
+  "prompts_file": null,
+  "project_type": null,
+  "development_mode": "batch",
+  "default_source_dirs": [
+    "."
+  ],
+  "default_target_dir": "./updated_project",
+  "export_filename_pattern": "req.md",
+  "import_filename_pattern": "resp.md",
+  "export_output_dir": "./exports",
+  "import_output_dir": "./imports"
+}

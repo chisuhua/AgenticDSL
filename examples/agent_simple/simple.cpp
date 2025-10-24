@@ -104,7 +104,7 @@ next: ["/main/step3"]
 
         // c. 创建并执行引擎
         try {
-            auto engine = agenticdsl::AgenticDSLEngine::from_markdown(aggregated_dsl_content, agent_context);
+            auto engine = agenticdsl::DSLEngine::from_markdown(aggregated_dsl_content, agent_context);
             auto result = engine->run(agent_context);
 
             // e. 更新上下文和历史记录

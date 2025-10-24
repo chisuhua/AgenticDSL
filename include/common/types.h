@@ -11,6 +11,7 @@
 #include <string_view>
 #include <nlohmann/json.hpp> // inja 依赖 nlohmann/json
 #include <optional>
+#include <chrono>
 
 namespace agenticdsl {
 
@@ -60,6 +61,28 @@ struct Resource {
     std::string uri;
     std::string scope; // "global" or "local"
     nlohmann::json metadata; // optional
+};
+
+// === 新增：阶段 2.1 ===
+struct ExecutionBudget {
+    int max_nodes = -1;           // -1 表示无限制
+    int max_llm_calls = -1;
+    int max_duration_sec = -1;
+
+    int nodes_used = 0;
+    int llm_calls_used = 0;
+    std::chrono::steady_clock::time_point start_time;
+
+    bool exceeded() const {
+        if (max_nodes >= 0 && nodes_used > max_nodes) return true;
+        if (max_llm_calls >= 0 && llm_calls_used > max_llm_calls) return true;
+        if (max_duration_sec >= 0) {
+            auto elapsed = std::chrono::duration_cast<std::chrono::seconds>(
+                std::chrono::steady_clock::now() - start_time).count();
+            if (elapsed > max_duration_sec) return true;
+        }
+        return false;
+    }
 };
 
 } // namespace agenticdsl
