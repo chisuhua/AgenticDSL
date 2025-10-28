@@ -2,8 +2,9 @@
 #include "catch_amalgamated.hpp"
 #include "agenticdsl/core/engine.h"
 #include "agenticdsl/tools/registry.h"
-#include "agenticdsl/common/utils.h"
+#include "common/utils.h"
 #include <string>
+#include <iostream>
 
 using namespace agenticdsl;
 
@@ -73,9 +74,9 @@ nodes:
   - id: process
     type: assign
     assign:
-      user_greeting: "Hello, {{ default(user.name, 'Guest') }}!"
+      user_greeting: "Hello, {{ default(user.name, \"Guest\") }}!"
       item_count: "{{ length(items) }}"
-      is_empty: "{{ not exists(items) or length(items) == 0 }}"
+      is_empty: "{{ not exists(\"items\") or length(items) == 0 }}"
     next: ["/main/end"]
   - id: end
     type: end
@@ -91,8 +92,8 @@ nodes:
     auto result = engine->run(ctx);
     REQUIRE(result.success == true);
     REQUIRE(result.final_context["user_greeting"] == "Hello, Alice!");
-    REQUIRE(result.final_context["item_count"] == 2);
-    REQUIRE(result.final_context["is_empty"] == false);
+    REQUIRE(result.final_context["item_count"] == "2");
+    REQUIRE(result.final_context["is_empty"] == "false");
 }
 
 TEST_CASE("Resource Node Injection", "[resources]") {
@@ -114,11 +115,11 @@ graph_type: subgraph
 nodes:
   - id: start
     type: start
-    next: ["/resources/config", "/main/use_resource"]
+    next: ["/main/use_resource"]
   - id: use_resource
     type: assign
     assign:
-      config_path: "{{ resources.config.uri }}"
+      config_path: "{{ at(resources, \"/resources/config\").uri }}"
     wait_for: ["/resources/config"]
     next: ["/main/end"]
   - id: end

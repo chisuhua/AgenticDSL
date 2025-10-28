@@ -13,12 +13,12 @@ std::vector<std::unique_ptr<Node>> create_system_nodes() {
     nodes.push_back(std::move(budget_node));
 
     // /end_soft → soft 终止（供标准库使用）
-    auto soft_end = std::make_unique<EndNode>("/end_soft");
+    auto soft_end = std::make_unique<EndNode>("/__system__/end_soft");
     soft_end->metadata["termination_mode"] = "soft";
     nodes.push_back(std::move(soft_end));
 
     // /lib/utils/noop → 标准库 soft 终止单元（可选，推荐）
-    auto noop = std::make_unique<EndNode>("/lib/utils/noop");
+    auto noop = std::make_unique<EndNode>("/__system__/noop");
     noop->metadata["termination_mode"] = "soft";
     nodes.push_back(std::move(noop));
 

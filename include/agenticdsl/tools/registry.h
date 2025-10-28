@@ -14,7 +14,9 @@ public:
     static ToolRegistry& instance();
 
     template<typename Func>
-    void register_tool(std::string name, Func&& func);
+    void register_tool(std::string name, Func&& func) {
+        tools_[std::move(name)] = std::forward<Func>(func);
+    }
 
     bool has_tool(const std::string& name) const;
     nlohmann::json call_tool(const std::string& name, const std::unordered_map<std::string, std::string>& args);

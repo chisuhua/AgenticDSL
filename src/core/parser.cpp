@@ -3,8 +3,10 @@
 #include "common/utils.h"
 #include <fstream>
 #include <sstream>
+#include <iostream>
 #include <stdexcept>
 #include <nlohmann/json.hpp>
+#include <yaml-cpp/yaml.h>
 
 namespace agenticdsl {
 
@@ -19,22 +21,22 @@ std::vector<ParsedGraph> MarkdownParser::parse_from_string(const std::string& ma
         }
 
         try {
-            auto json_doc = nlohmann::json::parse(yaml_content);
+            YAML::Node yaml_root = YAML::Load(yaml_content);
 
-            // Handle file-level metadata (e.g., /__meta__)
+            nlohmann::json json_doc = yaml_to_json(yaml_root);
             if (path == "/__meta__") {
                 // 提取 execution_budget（如果存在）
                 if (json_doc.contains("execution_budget")) {
-                    const auto& budget_json = json_doc["execution_budget"];
+                    const auto& bj = json_doc["execution_budget"];
                     ExecutionBudget budget;
-                    if (budget_json.contains("max_nodes") && budget_json["max_nodes"].is_number_integer()) {
-                        budget.max_nodes = budget_json["max_nodes"].get<int>();
+                    if (bj.contains("max_nodes") && bj["max_nodes"].is_number_integer()) {
+                        budget.max_nodes = bj["max_nodes"].get<int>();
                     }
-                    if (budget_json.contains("max_llm_calls") && budget_json["max_llm_calls"].is_number_integer()) {
-                        budget.max_llm_calls = budget_json["max_llm_calls"].get<int>();
+                    if (bj.contains("max_llm_calls") && bj["max_llm_calls"].is_number_integer()) {
+                        budget.max_llm_calls = bj["max_llm_calls"].get<int>();
                     }
-                    if (budget_json.contains("max_duration_sec") && budget_json["max_duration_sec"].is_number_integer()) {
-                        budget.max_duration_sec = budget_json["max_duration_sec"].get<int>();
+                    if (bj.contains("max_duration_sec") && bj["max_duration_sec"].is_number_integer()) {
+                        budget.max_duration_sec = bj["max_duration_sec"].get<int>();
                     }
                     global_budget = budget;
                 }
@@ -101,8 +103,8 @@ std::vector<ParsedGraph> MarkdownParser::parse_from_string(const std::string& ma
                     graphs.push_back(std::move(graph));
                 }
             }
-        } catch (const nlohmann::json::parse_error& e) {
-            throw std::runtime_error("JSON parse error in block '" + path + "': " + std::string(e.what()));
+        } catch (const YAML::ParserException& e) {
+            throw std::runtime_error("YAML parse error in block '" + path + "': " + e.what());
         } catch (const std::exception& e) {
             throw std::runtime_error("Error parsing block '" + path + "': " + std::string(e.what()));
         }
@@ -129,6 +131,7 @@ std::vector<ParsedGraph> MarkdownParser::parse_from_file(const std::string& file
 }
 
 std::unique_ptr<Node> MarkdownParser::create_node_from_json(const NodePath& path, const nlohmann::json& node_json) {
+    std::cout << "[DEBUG] Parsing node at " << path << ": " << node_json.dump(2) << std::endl;
     std::string type_str = node_json.at("type").get<std::string>();
 
     // Parse next
@@ -163,6 +166,7 @@ std::unique_ptr<Node> MarkdownParser::create_node_from_json(const NodePath& path
 
     if (type_str == "start") {
         auto node = std::make_unique<StartNode>(path, std::move(next_paths));
+        node->metadata = metadata;
         node->signature = signature;
         node->permissions = permissions;
         return node;
@@ -181,6 +185,7 @@ std::unique_ptr<Node> MarkdownParser::create_node_from_json(const NodePath& path
             }
         }
         auto node = std::make_unique<AssignNode>(path, std::move(assign), std::move(next_paths));
+        node->metadata = metadata;
         node->signature = signature;
         node->permissions = permissions;
         return node;
@@ -188,6 +193,7 @@ std::unique_ptr<Node> MarkdownParser::create_node_from_json(const NodePath& path
         std::string prompt = node_json.at("prompt_template").get<std::string>();
         auto output_keys = parse_output_keys(node_json, path);
         auto node = std::make_unique<LLMCallNode>(path, std::move(prompt), std::move(output_keys), std::move(next_paths));
+        node->metadata = metadata;
         node->signature = signature;
         node->permissions = permissions;
         return node;
@@ -197,10 +203,15 @@ std::unique_ptr<Node> MarkdownParser::create_node_from_json(const NodePath& path
         std::unordered_map<std::string, std::string> args;
         if (node_json.contains("arguments") && node_json["arguments"].is_object()) {
             for (auto& [key, value] : node_json["arguments"].items()) {
+                if (!value.is_string()) {
+                    // 这不应该发生，如果发生了说明 yaml_to_json 有问题
+                    throw std::runtime_error("Argument '" + key + "' is not a string");
+                }
                 args[key] = value.get<std::string>();
             }
         }
         auto node = std::make_unique<ToolCallNode>(path, std::move(tool), std::move(args), std::move(output_keys), std::move(next_paths));
+        node->metadata = metadata;
         node->signature = signature;
         node->permissions = permissions;
         return node;

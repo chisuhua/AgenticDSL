@@ -6,28 +6,47 @@
 #include <vector>
 #include <regex>
 #include <nlohmann/json.hpp>
+#include <yaml-cpp/yaml.h>  // ← 新增
 
 namespace agenticdsl {
 
 inline std::vector<std::pair<NodePath, std::string>> extract_pathed_blocks(const std::string& markdown_content) {
     std::vector<std::pair<NodePath, std::string>> blocks;
 
-    // Use [\s\S] instead of . to match any character including newlines
+        //R"(###\s+AgenticDSL\s+`(/[\w/\-]+)`\s*\n)"          // ### AgenticDSL `/path`
     std::regex block_pattern(
-        R"(###\s+AgenticDSL\s+`(/[\w/\-]+)`\s*\n"
-        R"(# --- BEGIN AgenticDSL ---\s*\n([\s\S]*?)\n"
-        R"(# --- END AgenticDSL ---))"
+        R"(#\s+AgenticDSL\s+`([^`]+)`\s*\n)"  // ← 关键修改：[^`]+ 替代 /[\w/\-]+
+        R"(```(?:yaml)?\s*\n)"                               // ``` or ```yaml
+        R"(# --- BEGIN AgenticDSL ---\s*\n)"                 // BEGIN marker
+        R"([\s\S]*?)"                                        // content (non-greedy)
+        R"(\n# --- END AgenticDSL ---\s*\n)"                 // END marker
+        R"(```)",                                            // closing ```
+        std::regex::ECMAScript
     );
 
-    std::sregex_iterator iter(markdown_content.begin(), markdown_content.end(), block_pattern);
-    std::sregex_iterator end;
+    auto begin = std::sregex_iterator(markdown_content.begin(), markdown_content.end(), block_pattern);
+    auto end = std::sregex_iterator();
 
-    for (; iter != end; ++iter) {
-        std::string path = (*iter)[1].str();
-        std::string yaml_content = (*iter)[2].str();
-        blocks.emplace_back(std::move(path), std::move(yaml_content));
+    for (auto it = begin; it != end; ++it) {
+        std::string path = (*it)[1].str();        // 第1组：路径
+        std::string full_content = (*it)[0].str(); // 整个匹配块
+        // 从 full_content 中提取 BEGIN 和 END 之间的 YAML 内容
+        size_t begin_pos = full_content.find("# --- BEGIN AgenticDSL ---");
+        size_t end_pos = full_content.find("# --- END AgenticDSL ---");
+        if (begin_pos != std::string::npos && end_pos != std::string::npos) {
+            // 找到 BEGIN 后的第一个换行
+            size_t start = full_content.find('\n', begin_pos);
+            if (start != std::string::npos) {
+                start++; // 跳过换行
+                std::string yaml_content = full_content.substr(start, end_pos - start);
+                // 去除末尾可能的换行
+                if (!yaml_content.empty() && yaml_content.back() == '\n') {
+                    yaml_content.pop_back();
+                }
+                blocks.emplace_back(std::move(path), std::move(yaml_content));
+            }
+        }
     }
-
     return blocks;
 }
 
@@ -68,6 +87,8 @@ inline ResourceType parse_resource_type(const std::string& type_str) {
     if (type_str == "custom") return ResourceType::CUSTOM;
     throw std::runtime_error("Unknown resource_type '" + type_str + "'");
 }
+
+nlohmann::json yaml_to_json(const YAML::Node& node);
 
 } // namespace agenticdsl
 

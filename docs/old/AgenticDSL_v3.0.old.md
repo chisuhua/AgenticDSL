@@ -1,0 +1,327 @@
+# AgenticDSL v3.0 规范草案  
+**AI-Native Dynamic DAG Language · 安全 · 可终止 · 可调试 · 可复用 · 可契约**
+
+> **定位**：为单智能体及未来多智能体系统提供一套 **LLM 可生成、引擎可执行、DAG 可动态生长、标准库可契约复用** 的声明式动态 DAG 语言。  
+> **根本范式**：  
+> - **LLM 是程序员**（仅在必要时介入，基于真实状态生成可验证子图）  
+> - **执行器是运行时**（确定性调度、状态合并、预算控制）  
+> - **上下文是内存**（结构可契约、合并可策略、冲突可诊断）  
+> - **DAG 是程序**（图可增量演化，非一次性静态编排）  
+> - **标准库是 SDK**（`/lib/**` 必须带 `signature`，最小权限沙箱）  
+
+---
+
+## 一、公共契约（Public Contract）
+
+### 1.1 上下文模型（Context）
+
+- 全局可变字典，支持嵌套路径（如 `user.name`, `search_result.docs[0].title`）
+- 所有节点共享同一上下文；`assign` / `tool_call` / `codelet_call` 的返回值 **merge 到该上下文**
+- 并发节点使用上下文副本，执行完成后按策略 merge 回主上下文
+
+#### 合并策略（字段级、可继承）
+
+| 策略 | 行为说明 |
+|------|--------|
+| `error_on_conflict`（默认） | 任一字段在多个分支中被写入 → 报错终止 |
+| `last_write_wins` | 以最后完成的节点写入值为准（非确定性，仅用于幂等操作） |
+| `deep_merge` | 递归合并对象；**数组替换（非拼接）**；标量覆盖（遵循 RFC 7396） |
+
+✅ **字段级策略继承**  
+- 节点可声明 `context_merge_policy`，覆盖全局策略  
+- 支持通配路径（如 `user.*`）和精确路径（如 `user.id`）  
+- 子图策略优先于父图
+
+✅ **结构化合并冲突错误**  
+错误信息必须包含：  
+- 冲突字段路径（如 `user.id`）  
+- 各写入分支的值（如 `branch_a: "u1", branch_b: "u2"`）  
+- 来源节点路径（如 `/main/step1`, `/main/step2`）  
+- 错误码：`ERR_CTX_MERGE_CONFLICT`
+
+---
+
+### 1.2 Inja 模板引擎（安全模式）
+
+✅ 允许：变量、条件、循环、内置函数、表达式、模板内赋值  
+❌ 禁止：`include`/`extends`、环境变量、任意代码执行  
+🔁 性能优化：执行器应对相同上下文+模板组合缓存渲染结果
+
+---
+
+### 1.3 节点通用字段
+
+| 字段 | 类型 | 必需 | 说明 |
+|------|------|------|------|
+| `type` | string | ✅ | 节点类型 |
+| `next` | string 或 list | ⚠️ | Inja 表达式或路径列表（支持 `@v1` 版本后缀） |
+| `metadata` | map | ❌ | `description`, `author`, `tags`, `override: true` |
+| `on_error` | string | ❌ | 错误处理跳转路径 |
+| `on_timeout` | string | ❌ | 超时处理路径 |
+| `wait_for` | list 或 map | ❌ | 支持 `any_of` / `all_of` / 动态表达式 |
+| `loop_until` | string | ❌ | Inja 表达式，控制循环 |
+| `max_loop` | integer | ❌ | 最大循环次数（默认 10） |
+| `dev_comment` | string | ❌ | 开发注释 |
+| `context_merge_policy` | map | ❌ | 字段级合并策略 |
+| `permissions` | list | ❌ | 节点所需权限声明（见 4.2） |
+
+---
+
+### 1.4 节点类型
+
+| 类型 | 说明 | 关键字段 |
+|------|------|--------|
+| `start` | 无操作，跳转到 `next` | — |
+| `end` | 终止当前子图执行 | `output_keys`, `termination_mode` |
+| `assign` | Inja 赋值到上下文 | `assign` |
+| `llm_call` | **核心：触发 LLM 生成新子图** | `prompt_template`, `output_schema`, `output_constraints` |
+| `tool_call` | 调用注册工具 | `tool`, `arguments`, `output_mapping` |
+| `codelet` / `codelet_call` | 定义/调用代码单元 | `runtime`, `code`, `security` |
+| `resource` | 声明外部资源 | `resource_type`, `uri`, `scope` |
+
+✅ **`end` 节点支持 `soft` 终止语义强化**  
+- `soft` 模式下，执行器必须将控制流返回至**调用者父图的下一个节点**  
+- 若非显式调用（如根图直接跳转），`soft` 等同于 `hard`
+
+✅ **`llm_call` 支持子图契约反馈**  
+- 执行器必须将 `available_subgraphs`（含 `signature`）注入 prompt  
+- 违反 `output_constraints` 的子图视为非法，触发 `fallback_next` 或 `on_error`
+
+---
+
+## 二、统一文档结构
+
+### 2.1 路径化子图块（核心单元）
+
+- 所有逻辑单元均为 **`### AgenticDSL '/path'` 块**
+- `.agent.md` 文件是**多个子图块的物理打包格式**
+- 路径命名空间：
+  - `/lib/**`：**静态标准库**（必须带 `signature`）
+  - `/dynamic/**`：**运行时生成子图**（可选 `signature`）
+  - `/main/**`：主流程（可动态或静态）
+
+```markdown
+### AgenticDSL '/lib/custom_support/basic_flow'
+
+yaml
+signature:
+  inputs:
+    - name: user_query
+      type: string
+  outputs:
+    - name: final_response
+      type: string
+version: "1.0"
+stability: stable
+nodes: [...]
+...
+```
+
+### 2.2 子图签名（Subgraph Signature）
+
+所有 `/lib/**` 子图 **必须** 声明结构化接口契约：
+
+```yaml
+signature:
+  inputs:
+    - name: lib_human_prompt
+      type: string
+      required: true
+  outputs:
+    - name: lib_human_response
+      type: object
+      schema: { intent: string, raw: string }
+  version: "1.0"
+  stability: stable  # stable / experimental / deprecated
+```
+
+- 执行器责任：调用前校验 `inputs`，调用后验证 `outputs`
+- LLM 生成时，`available_subgraphs` 必须包含 `signature` 信息
+
+### 2.3 LLM 意图结构化
+
+```html
+<!-- LLM_INTENT: {"task": "user_clarification", "domain": "ecommerce"} -->
+```
+
+- 执行器必须解析为 JSON 并记录到 trace
+- 若格式非法，记录为原始字符串并告警
+
+---
+
+## 三、核心能力规范
+
+### 3.1 动态 DAG 执行 + 全局预算
+
+- `execution_budget`：`max_nodes`, `max_llm_calls`, `max_duration_sec`
+- 超限 → 跳转 `/__system__/budget_exceeded`
+- **终止条件**：队列空 + 无活跃 LLM + 无待合并子图 + 预算未超
+
+### 3.2 动态子图生成（`llm_call` 核心机制）
+
+- LLM **必须输出一个或多个 `### AgenticDSL '/path'` 块**
+- 执行器解析为子图对象，注册到 `/dynamic/**` 命名空间
+- 若声明 `signature`，则校验输入/输出契约
+- 新子图可被后续节点通过 `next: "/dynamic/plan_123"` 调用
+
+### 3.3 并发与依赖表达
+
+- `wait_for` 支持 `any_of` / `all_of`
+- 支持动态依赖：`wait_for: "{{ dynamic_branches }}"`
+- ✅ **依赖解析时机**：执行器必须在节点入调度队列前解析 `wait_for` 表达式  
+- ❌ **禁止**：在执行中动态变更依赖拓扑
+
+---
+
+## 四、安全与工程保障
+
+### 4.1 标准库契约强制
+
+- 所有 `/lib/**` 子图 **必须** 声明 `signature`
+- 执行器启动时预加载并校验所有标准库
+- LLM 生成时，`available_subgraphs` 必须包含 `signature` 信息
+
+### 4.2 权限与沙箱
+
+节点或子图可声明 `permissions`：
+
+```yaml
+permissions:
+  - tool: web_search → scope: read_only
+  - runtime: python3 → allow_imports: [json, re]
+  - network: outbound → domains: ["api.example.com"]
+```
+
+- 执行器对 `/lib/**` 启用**最小权限沙箱**
+- 未授权行为 → 立即终止并跳转 `on_error`
+
+### 4.3 可观测性增强
+
+所有节点执行后生成结构化 Trace：
+
+```json
+{
+  "trace_id": "t-12345",
+  "node_path": "/lib/human/clarify_intent",
+  "type": "tool_call",
+  "start_time": "2025-10-23T10:00:00Z",
+  "end_time": "2025-10-23T10:00:02Z",
+  "status": "success",
+  "context_delta": { "lib_human_response.intent": "查订单" },
+  "llm_intent": { "task": "user_clarification" },
+  "lib_version": "1.0",
+  "budget_snapshot": { "nodes_used": 5 }
+}
+```
+
+- 支持导出为 OpenTelemetry 格式
+- `/lib/**` 节点自动附加 `node_type: "standard_library"` 标签
+
+### 4.4 标准库版本与依赖管理
+
+- 路径支持语义化版本：`next: "/lib/human/clarify_intent@v1"`
+- 子图可声明依赖：
+  ```yaml
+  requires:
+    - lib: "/lib/utils/assign_from_template@^1.0"
+  ```
+- 执行器启动时解析依赖图，拒绝循环或缺失依赖
+
+---
+
+## 五、LLM 生成指令（System Prompt）
+
+> 你是一个工作流程序员（Workflow Programmer）。你的任务是生成下一步的 AgenticDSL 子图。
+
+**必须遵守**：
+- 永远不要输出自然语言解释（除非在 `<!-- LLM: ... -->` 或 `<!-- LLM_INTENT: ... -->` 中）
+- **必须输出一个或多个 `### AgenticDSL '/path'` 块**
+- 若任务已完成，请生成 `end` 节点
+- 默认不能生成 `llm_call`（除非父节点授权）
+
+**新增提示**：
+- 你可声明结构化意图：`<!-- LLM_INTENT: {"task": "..."} -->`
+- 你必须遵守 `output_constraints`（如有）
+- 优先调用标准库：
+
+```jinja2
+可用库清单（含契约）：
+{% for lib in available_subgraphs %}
+- {{ lib.path }} (v{{ lib.version }}): {{ lib.description }}
+  Inputs: {{ lib.signature.inputs | map(attr='name') | join(', ') }}
+  Outputs: {{ lib.signature.outputs | map(attr='name') | join(', ') }}
+{% endfor %}
+```
+
+**当前上下文**：
+- 已执行节点：`{{ execution_context.executed_nodes }}`
+- 任务目标：`{{ execution_context.task_goal }}`
+- 执行预算剩余：`nodes: {{ budget.nodes_left }}, llm_calls: {{ budget.llm_calls_left }}`
+
+---
+
+## 六、完整示例（v3.0）
+
+```markdown
+### AgenticDSL `/__meta__`
+
+yaml
+version: "3.0"
+execution_budget:
+  max_nodes: 20
+  max_llm_calls: 2
+  max_duration_sec: 30
+context_merge_strategy: "error_on_conflict"
+
+### AgenticDSL `/main/human_check`
+
+yaml
+type: assign
+assign:
+  lib_human_prompt: "用户说‘还没到’，请判断真实意图"
+  lib_human_options: ["查物流", "催发货", "投诉"]
+next: "/lib/human/clarify_intent@v1"
+
+### AgenticDSL `/main/handle`
+
+yaml
+type: assign
+assign:
+  response: "将处理：{{ lib_human_response.intent }}"
+next: "/end_soft"
+
+### AgenticDSL `/end_soft`
+
+yaml
+type: end
+termination_mode: soft
+
+### AgenticDSL `/lib/human/clarify_intent`
+
+yaml
+signature:
+  inputs:
+    - name: lib_human_prompt
+      type: string
+    - name: lib_human_options
+      type: array<string>
+  outputs:
+    - name: lib_human_response
+      type: object
+      schema: { intent: string, raw: string }
+version: "1.0"
+stability: stable
+type: human
+instructions: "{{ lib_human_prompt }}"
+fields:
+  - field: $.lib_human_options
+    label: "请选择意图"
+    type: enum
+roles: [support_agent]
+timeout: 300
+```
+
+---
+
+> **AgenticDSL v3.0 不是静态编排语言，而是动态可生长的智能体操作系统。**  
+> 它继承 v2.3 的全部先进理念，并通过标准化、澄清化、工程化，为 LLM 原生编程时代奠定基础。

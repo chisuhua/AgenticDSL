@@ -1,12 +1,19 @@
 // tests/test_parser.cpp
 #include "catch_amalgamated.hpp"
 #include "agenticdsl/core/parser.h"
-#include "agenticdsl/common/utils.h"
 #include "agenticdsl/core/nodes.h"
+#include "common/utils.h"  // ← 注意路径
 #include <string>
 #include <iostream>
+#include <yaml-cpp/yaml.h>           // ← 新增
 
 using namespace agenticdsl;
+
+// Helper: parse YAML string → nlohmann::json via yaml-cpp
+static nlohmann::json parse_yaml_str(const std::string& yaml_str) {
+    YAML::Node node = YAML::Load(yaml_str);
+    return yaml_to_json(node);
+}
 
 // Test 1: Extract pathed blocks correctly (with multi-line YAML)
 TEST_CASE("Parse Pathed Blocks", "[parser][utils]") {
@@ -70,7 +77,7 @@ next: "/main/end"
 metadata:
   description: "Summarization step"
 )";
-    auto json_doc = nlohmann::json::parse(yaml);
+    auto json_doc = parse_yaml_str(yaml);  // ← 修改点
     MarkdownParser parser;
     auto node = parser.create_node_from_json("/main/summarize", json_doc);
 
@@ -98,7 +105,7 @@ arguments:
 output_keys: ["status", "body"]
 next: ["/main/process"]
 )";
-    auto json_doc = nlohmann::json::parse(yaml);
+    auto json_doc = parse_yaml_str(yaml);  // ← 修改点
     MarkdownParser parser;
     auto node = parser.create_node_from_json("/main/fetch", json_doc);
 
@@ -124,7 +131,7 @@ scope: global
 metadata:
   tags: ["cache", "temp"]
 )";
-    auto json_doc = nlohmann::json::parse(yaml);
+    auto json_doc = parse_yaml_str(yaml);  // ← 修改点
     MarkdownParser parser;
     auto node = parser.create_node_from_json("/resources/cache", json_doc);
 
@@ -188,7 +195,7 @@ type: llm_call
 prompt_template: "Test"
 output_keys: "result"
 )";
-        auto node1 = parser.create_node_from_json("/test1", nlohmann::json::parse(yaml1));
+        auto node1 = parser.create_node_from_json("/test1", parse_yaml_str(yaml1));  // ← 修改点
         auto* llm1 = dynamic_cast<LLMCallNode*>(node1.get());
         REQUIRE(llm1->output_keys == std::vector<std::string>{"result"});
     }
@@ -201,7 +208,7 @@ tool: mock_tool
 output_keys: ["a", "b"]
 arguments: {}
 )";
-        auto node2 = parser.create_node_from_json("/test2", nlohmann::json::parse(yaml2));
+        auto node2 = parser.create_node_from_json("/test2", parse_yaml_str(yaml2));  // ← 修改点
         auto* tool2 = dynamic_cast<ToolCallNode*>(node2.get());
         REQUIRE(tool2->output_keys == std::vector<std::string>{"a", "b"});
     }
@@ -223,7 +230,7 @@ assign:
     MarkdownParser parser;
     REQUIRE_THROWS_WITH(
         parser.parse_from_string(markdown),
-        Catch::Contains("Invalid node path format")
+        Catch::Matchers::ContainsSubstring("Invalid node path format")
     );
 }
 
@@ -236,8 +243,8 @@ prompt_template: "Test"
 )";
     MarkdownParser parser;
     REQUIRE_THROWS_WITH(
-        parser.create_node_from_json("/bad", nlohmann::json::parse(yaml)),
-        Catch::Contains("Missing 'output_keys'")
+        parser.create_node_from_json("/bad", parse_yaml_str(yaml)),  // ← 修改点
+        Catch::Matchers::ContainsSubstring("Missing 'output_keys'")
     );
 }
 
@@ -291,3 +298,4 @@ next: ["/main/end"]
     REQUIRE(node->signature == "(query: string) -> results");
     REQUIRE(node->permissions == std::vector<std::string>{"network"});
 }
+

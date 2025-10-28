@@ -1,5 +1,6 @@
 #include "agenticdsl/scheduler/topo_scheduler.h"
 #include "agenticdsl/dsl/templates.h"
+#include "agenticdsl/resources/manager.h"
 #include "common/utils.h"
 #include <queue>
 #include <stdexcept>
@@ -26,13 +27,18 @@ void TopoScheduler::register_node(std::unique_ptr<Node> node) {
 void TopoScheduler::build_dag() {
     // 初始化入度
     for (const auto& node : all_nodes_) {
+        if (node->path.rfind("/__system__/", 0) == 0) {
+            continue;
+        }
         in_degree_[node->path] = 0;
-        // 初始化 reverse_edges_（后继 → 前驱）
         reverse_edges_[node->path] = {};
     }
 
     // 构建反向边并计算入度
     for (const auto& node : all_nodes_) {
+        if (node->path.rfind("/__system__/", 0) == 0) {
+            continue;
+        }
         NodePath current = node->path;
 
         // 处理 next
@@ -85,6 +91,9 @@ void TopoScheduler::build_dag() {
 
     // 初始化 ready_queue_（入度为0的节点）
     for (const auto& node : all_nodes_) {
+        if (node->path.rfind("/__system__/", 0) == 0) {
+            continue;
+        }
         if (in_degree_[node->path] == 0) {
             ready_queue_.push(node->path);
         }
@@ -144,6 +153,10 @@ std::vector<NodePath> TopoScheduler::parse_wait_for(const nlohmann::json& wait_f
 }
 
 Context TopoScheduler::execute_node(Node* node, Context& context) {
+    auto resources_ctx = ResourceManager::instance().get_resources_context();
+    if (!resources_ctx.empty()) {
+        context["resources"] = resources_ctx;
+    }
     // 处理动态 wait_for（运行时依赖）
     if (node->metadata.contains("wait_for") && node->metadata["wait_for"].is_string()) {
         auto deps = parse_wait_for(node->metadata["wait_for"], context);
@@ -192,12 +205,11 @@ ExecutionResult TopoScheduler::execute(Context initial_context) {
             return {false, "Execution failed at " + path + ": " + e.what(), context, std::nullopt};
         }
 
-        // 处理 LLM_CALL 暂停（v2.2 行为）
+        // 处理 LLM_CALL 暂停
         if (node->type == NodeType::LLM_CALL) {
             return {true, "Paused at LLM call", context, path};
         }
 
-        // 处理 END 节点
         if (node->type == NodeType::END) {
             std::string mode = node->metadata.value("termination_mode", "hard");
             if (mode == "hard") {

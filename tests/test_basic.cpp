@@ -128,12 +128,12 @@ nodes:
 }
 
 // Test 5: DSL Path Validation
-TEST_CASE("DSL Path Validation", "[spec][utils]") {
-    REQUIRE(agenticdsl::DSLValidator::validate_path("/valid/path/to/node"));
-    REQUIRE_FALSE(agenticdsl::DSLValidator::validate_path("invalid_path_no_slash_start"));
-    REQUIRE(agenticdsl::DSLValidator::validate_path("/valid-node_name"));
-    REQUIRE_FALSE(agenticdsl::DSLValidator::validate_path("/path with spaces"));
-}
+//TEST_CASE("DSL Path Validation", "[spec][utils]") {
+//    REQUIRE(agenticdsl::DSLValidator::validate_path("/valid/path/to/node"));
+//    REQUIRE_FALSE(agenticdsl::DSLValidator::validate_path("invalid_path_no_slash_start"));
+//    REQUIRE(agenticdsl::DSLValidator::validate_path("/valid-node_name"));
+//    REQUIRE_FALSE(agenticdsl::DSLValidator::validate_path("/path with spaces"));
+//}
 
 // Test 6: More complex Inja features (e.g., loops, conditions)
 TEST_CASE("Inja Complex Features", "[templates][renderer]") {

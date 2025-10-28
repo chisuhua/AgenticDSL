@@ -63,11 +63,6 @@ void ToolRegistry::register_default_tools() {
     });
 }
 
-template<typename Func>
-void ToolRegistry::register_tool(std::string name, Func&& func) {
-    tools_[std::move(name)] = std::forward<Func>(func);
-}
-
 bool ToolRegistry::has_tool(const std::string& name) const {
     return tools_.count(name) > 0;
 }

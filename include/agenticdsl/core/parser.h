@@ -32,8 +32,8 @@ public:
     std::vector<ParsedGraph> parse_from_string(const std::string& markdown_content);
     std::vector<ParsedGraph> parse_from_file(const std::string& file_path);
 
-private:
     std::unique_ptr<Node> create_node_from_json(const NodePath& path, const nlohmann::json& node_json);
+private:
     void validate_nodes(const std::vector<std::unique_ptr<Node>>& nodes);
 };
 

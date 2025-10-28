@@ -18,8 +18,8 @@ static std::optional<ExecutionBudget> extract_budget(const std::vector<ParsedGra
 DAGExecutor::DAGExecutor(const std::vector<ParsedGraph>& graphs) {
     auto budget = extract_budget(graphs);
     TopoScheduler::Config config;
-    config.initial_budget = budget; // ← 传入预算
-    scheduler_ = TopoScheduler(config); // ← 使用带 config 的构造函数
+    config.initial_budget = budget; 
+    scheduler_ = TopoScheduler(config);
     load_graphs(graphs);
 }
 
@@ -45,12 +45,6 @@ void DAGExecutor::load_graphs(const std::vector<ParsedGraph>& graphs) {
 
 ExecutionResult DAGExecutor::execute(const Context& initial_context) {
     Context context = initial_context;
-    auto resources_ctx = ResourceManager::instance().get_resources_context();
-    if (!resources_ctx.empty()) {
-        context["resources"] = resources_ctx;
-    }
-
-    // 执行 DAG
     return scheduler_.execute(std::move(context));
 }
 

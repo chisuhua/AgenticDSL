@@ -1,4 +1,4 @@
-# 📘 AgenticDSL 规范 v2.3（生产就绪版）  
+# 📘 AgenticDSL 规范 
 **动态可生长 DAG 执行语言标准 · 安全 · 可终止 · 可调试 · 可复用 · 可契约**
 
 > **定位**：为单智能体系统提供一套 **LLM 可生成、引擎可执行、图可增量演化、库可契约复用** 的动态 DAG 工作流语言。  
@@ -8,8 +8,6 @@
 ---
 
 ## 一、公共契约（Public Contract）
-
-所有 AgenticDSL v2.3 实现（执行器、LLM 提示、解析器）必须遵守以下约定。
 
 ### 1.1 上下文模型（Context）
 
@@ -25,12 +23,12 @@
 | `last_write_wins` | 以最后完成的节点写入值为准（非确定性，仅用于幂等操作） |
 | `deep_merge` | 递归合并对象；数组 **替换**（非拼接）；标量覆盖（遵循 RFC 7396） |
 
-✅ **v2.3 增强：字段级合并策略继承**
+✅ **字段级合并策略继承**
 - 节点可声明 `context_merge_policy`，覆盖全局策略
 - 支持通配路径（如 `user.*`）和精确路径（如 `user.id`）
 - 若父图与子图策略冲突，**子图策略优先**
 
-✅ **v2.3 增强：结构化合并冲突错误**
+✅ **结构化合并冲突错误**
 - 错误信息必须包含：
   - 冲突字段路径（如 `user.id`）
   - 各写入分支的值（如 `branch_a: "u1", branch_b: "u2"`）
@@ -43,7 +41,7 @@
 - ❌ 禁止：`include`/`extends`、环境变量、任意代码执行
 - 🔁 性能优化：执行器应对相同上下文+模板组合缓存渲染结果
 
-### 1.3 节点通用字段（v2.3 扩展）
+### 1.3 节点通用字段
 
 | 字段 | 类型 | 必需 | 说明 |
 |------|------|------|------|
@@ -57,9 +55,9 @@
 | `max_loop` | integer | ❌ | 最大循环次数（默认 10）|
 | `dev_comment` | string | ❌ | 开发注释 |
 | `context_merge_policy` | map | ❌ | 字段级合并策略 |
-| `permissions` | list | ❌ | **v2.3 新增**：节点所需权限声明（见 4.3）|
+| `permissions` | list | ❌ | 节点所需权限声明（见 4.3）|
 
-### 1.4 节点类型（v2.3 扩展）
+### 1.4 节点类型
 
 | 类型 | 说明 | 关键字段 |
 |------|------|--------|
@@ -71,11 +69,11 @@
 | `codelet` / `codelet_call` | 定义/调用代码单元 | `runtime`, `code`, `security` |
 | `resource` | 声明外部资源 | `resource_type`, `uri`, `scope` |
 
-✅ **v2.3 增强：`end` 节点支持 `soft` 终止语义强化**
+✅ **`end` 节点支持 `soft` 终止语义强化**
 - `soft` 模式下，执行器必须将控制流返回至**调用者父图的下一个节点**
 - 若非显式调用（如根图直接跳转），`soft` 等同于 `hard`
 
-✅ **v2.3 增强：`llm_call` 支持子图契约反馈**
+✅ **`llm_call` 支持子图契约反馈**
 - 执行器必须将 `available_subgraphs`（含 `signature`）注入 prompt
 - 违反 `output_constraints` 的子图视为非法，触发 `fallback_next` 或 `on_error`
 
@@ -83,9 +81,9 @@
 
 ## 二、统一文档结构
 
-### 2.1–2.4 路径化块、YAML 边界、子图、元信息（同 v2.2）
+### 路径化块、YAML 边界、子图、元信息
 
-✅ **v2.3 新增：子图签名（Subgraph Signature）**
+✅ **子图签名（Subgraph Signature）**
 
 所有子图（尤其是 `/lib/**`）可声明结构化接口契约：
 
@@ -111,7 +109,7 @@ signature:
 
 > **执行器责任**：调用前校验 `inputs`，调用后验证 `outputs`。
 
-✅ **v2.3 新增：LLM 意图结构化**
+✅ **LLM 意图结构化**
 
 ```html
 <!-- LLM_INTENT: {"task": "user_clarification", "domain": "ecommerce"} -->
@@ -122,36 +120,36 @@ signature:
 
 ---
 
-## 三、v2.3 核心能力规范
+## 三、核心能力规范
 
-### 3.1 动态 DAG 执行 + 全局预算（同 v2.2）
+### 3.1 动态 DAG 执行 + 全局预算
 
 - `execution_budget`：`max_nodes`, `max_llm_calls`, `max_duration_sec`
 - 超限 → 跳转 `/__system__/budget_exceeded`
 - 终止条件：队列空 + 无活跃 LLM + 无待合并子图 + 预算未超
 
-### 3.2–3.6 Codelet、LLM 协同、异常、循环（同 v2.2）
+### 3.2–3.6 Codelet、LLM 协同、异常、循环
 
-### 3.7 并发与依赖表达（v2.2 增强）
+### 3.7 并发与依赖表达
 
 - `wait_for` 支持 `any_of` / `all_of`
 - 支持动态依赖：`wait_for: "{{ dynamic_branches }}"`
 
-✅ **v2.3 新增：依赖解析时机**
+✅ **依赖解析时机**
 - 执行器必须在节点**入调度队列前**解析 `wait_for` 表达式
 - 禁止在执行中动态变更依赖拓扑
 
 ---
 
-## 四、安全与工程保障（v2.3 强化）
+## 四、安全与工程保障
 
-### 4.1 标准库契约强制（v2.3 核心）
+### 4.1 标准库契约强制
 
 - 所有 `/lib/**` 子图 **必须** 声明 `signature`
 - 执行器启动时预加载并校验所有标准库
 - LLM 生成时，`available_subgraphs` 必须包含 `signature` 信息
 
-### 4.2 权限与沙箱（v2.3 新增）
+### 4.2 权限与沙箱
 
 - 节点或子图可声明 `permissions`：
   ```yaml
@@ -163,7 +161,7 @@ signature:
 - 执行器对 `/lib/**` 启用最小权限沙箱
 - 未授权行为 → 立即终止并跳转 `on_error`
 
-### 4.3 可观测性增强（v2.3 新增）
+### 4.3 可观测性增强
 
 - 所有节点执行后生成 **结构化 Trace**：
   ```json
@@ -195,7 +193,7 @@ signature:
 
 ---
 
-## 五、LLM 生成指令（System Prompt · v2.3）
+## 五、LLM 生成指令:System Prompt 
 
 你是一个工作流程序员（Workflow Programmer）。你的任务是生成下一步的 AgenticDSL 子图。
 
@@ -205,7 +203,7 @@ signature:
 - 若任务已完成，请生成 `end` 节点
 - 默认不能生成 `llm_call`（除非父节点授权）
 
-**v2.3 新增提示**：
+**新增提示**：
 - 你可声明结构化意图：`<!-- LLM_INTENT: {"task": "..."} -->`
 - 你必须遵守 `output_constraints`（如有）
 - 优先调用标准库：可用库清单如下（含输入/输出契约）：
@@ -223,10 +221,11 @@ signature:
 
 ---
 
-## 六、完整示例（v2.3）
+## 六、完整示例
 
-```yaml
+```markdown
 ### AgenticDSL `/__meta__`
+```yaml
 # --- BEGIN AgenticDSL ---
 version: "2.3"
 execution_budget:
@@ -235,8 +234,10 @@ execution_budget:
   max_duration_sec: 30
 context_merge_strategy: "error_on_conflict"
 # --- END AgenticDSL ---
+```
 
 <!-- LLM_INTENT: {"task": "user_clarification", "domain": "logistics"} -->
+```yaml
 ### AgenticDSL `/main/human_check`
 # --- BEGIN AgenticDSL ---
 type: assign
@@ -245,31 +246,28 @@ assign:
   lib_human_options: ["查物流", "催发货", "投诉"]
 next: "/lib/human/clarify_intent@v1"
 # --- END AgenticDSL ---
+```
 
 ### AgenticDSL `/main/handle`
+```yaml
 # --- BEGIN AgenticDSL ---
 type: assign
 assign:
   response: "将处理：{{ lib_human_response.intent }}"
 next: "/end_soft"
 # --- END AgenticDSL ---
+```
 
 ### AgenticDSL `/end_soft`
+```yaml
 # --- BEGIN AgenticDSL ---
 type: end
 termination_mode: soft
 # --- END AgenticDSL ---
 ```
+```
+```
 
 ---
 
-## 七、向后兼容性
-
-- 所有 v2.2 DSL 文件 **无需修改即可在 v2.3 执行器中运行**
-- 未声明 `signature` 的子图视为 `v1.0-legacy`，执行器降级处理（仅日志警告）
-- 旧版 `next: "/lib/..."` 自动解析为 `@latest`
-
----
-
-> **AgenticDSL v2.3 是构建“能复用、能协作、能演进、能自停、能验证”的生产级智能体工作流内核的标准语言。**
 

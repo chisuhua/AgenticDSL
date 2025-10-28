@@ -36,11 +36,11 @@ next: "/main/step2"
 type: assign
 assign:
   step2: "done"
-next: "/end_hard"
+next: "/main/end"
 # --- END AgenticDSL ---
 ```
 
-### AgenticDSL `/end_hard`
+### AgenticDSL `/main/end`
 ```yaml
 # --- BEGIN AgenticDSL ---
 type: end
@@ -95,11 +95,11 @@ assign:
   final: "{{ result_a }}+{{ result_b }}"
 wait_for:
   all_of: ["/task/a", "/task/b"]
-next: "/end_hard"
+next: "/main/end"
 # --- END AgenticDSL ---
 ```
 
-### AgenticDSL `/end_hard`
+### AgenticDSL `/main/end`
 ```yaml
 # --- BEGIN AgenticDSL ---
 type: end
@@ -121,7 +121,7 @@ TEST_CASE("Soft Termination Continues Parent Flow", "[stage1][scheduler]") {
 type: assign
 assign:
   before_lib: "yes"
-next: "/lib/utils/noop"
+next: "/__system__/noop"
 # --- END AgenticDSL ---
 ```
 
@@ -131,12 +131,12 @@ next: "/lib/utils/noop"
 type: assign
 assign:
   after_lib: "executed"
-wait_for: ["/lib/utils/noop"]
-next: "/end_hard"
+wait_for: ["/__system__/noop"]
+next: "/main/end"
 # --- END AgenticDSL ---
 ```
 
-### AgenticDSL `/end_hard`
+### AgenticDSL `/main/end`
 ```yaml
 # --- BEGIN AgenticDSL ---
 type: end
@@ -178,7 +178,7 @@ TEST_CASE("Lib Utils Noop Executes as Soft End", "[stage1][scheduler]") {
 type: assign
 assign:
   before: "start"
-next: "/lib/utils/noop"
+next: "/__system__/noop"
 # --- END AgenticDSL ---
 ```
 
@@ -188,12 +188,12 @@ next: "/lib/utils/noop"
 type: assign
 assign:
   after: "continued"
-wait_for: ["/lib/utils/noop"]
-next: "/end_hard"
+wait_for: ["/__system__/noop"]
+next: "/main/end"
 # --- END AgenticDSL ---
 ```
 
-### AgenticDSL `/end_hard`
+### AgenticDSL `/main/end`
 ```yaml
 # --- BEGIN AgenticDSL ---
 type: end
