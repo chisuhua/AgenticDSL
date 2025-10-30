@@ -1,0 +1,41 @@
+{
+  "export_time": "2025-10-30T00:41:14.451830",
+  "source_dirs": [
+    "/Volumes/ubuntu/chisuhua/github/AgenticDSL/src/modules"
+  ],
+  "output_file": "/Volumes/ubuntu/chisuhua/github/AgenticDSL/src/modules/exports/req1.md",
+  "file_hashes": {
+    "prompts.yaml": "e74a90628c345d2d633fa1fceb10a796",
+    ".chat4code.json": "7728618a6ae4bee73b6f73ad8e2114f9",
+    "context/CMakeLists.txt": "0c7f019a41fe293a2b4da526c24dec92",
+    "context/include/context/context_engine.h": "b74076adcf10519054b74a00e14a1976",
+    "context/src/context_engine.cpp": "4e1f0304b4873c0db532535df7160282",
+    "trace/CMakeLists.txt": "01e10ae1b71ff5c73337f22622a528f9",
+    "trace/include/trace/trace_exporter.h": "1cea2573f05395b074c2c2a82505b1fd",
+    "trace/src/trace_exporter.cpp": "89b1e7466a41e59d7c9e431cfec03b6f",
+    "scheduler/CMakeLists.txt": "d114ddbd70d5a9a3c4b509f187855fd0",
+    "scheduler/include/scheduler/execution_session.h": "12e00472d792a03dc2c9b5d7aef5eb78",
+    "scheduler/include/scheduler/topo_scheduler.h": "a31789bb80f61ab7e9d5c2624375e324",
+    "scheduler/include/scheduler/resource_manager.h": "a0afec8bc43b85edaf46cf9d48a656c7",
+    "scheduler/src/topo_scheduler.cpp": "1903a809d96bb591b35aeb4556716e24",
+    "scheduler/src/execution_session.cpp": "067f148a9aa925c6b6f84bc8cf299efd",
+    "scheduler/src/resource_manager.cpp": "201f90f5d6ff1084f2fab64e51642e32",
+    "library/CMakeLists.txt": "61f64553bf609c7ff7507847cf3c115d",
+    "library/include/library/library_loader.h": "d1d022fc1b402e9e44c42e8144959fac",
+    "library/include/library/schema.h": "a9a69fb5c73f0adc9c0a642d4a1f5a68",
+    "library/src/library_loader.cpp": "507d07c791e8eefdd02d05c8b9559b96",
+    "parser/CMakeLists.txt": "48b2223a04de2138647dfb693b655c7e",
+    "parser/include/parser/markdown_parser.h": "469d18ec139ebc3cf0228d94944cad39",
+    "parser/src/markdown_parser.cpp": "b194b5ec2219a0dbe7e7f579b0756f6e",
+    "exports/req1.md": "414008b181ce501ecfd113f9fd3cff0d",
+    "system/CMakeLists.txt": "c7ae24a9f01ce8bb9f3adb75e3ff39ae",
+    "system/include/system/system_nodes.h": "114c574d1b1fd5287f989963894c1b7c",
+    "system/src/system_nodes.cpp": "b944c1d397302e5263248d7e272d23bf",
+    "executor/CMakeLists.txt": "6fba11df57604bef24b1af507157c5c9",
+    "executor/include/executor/node_executor.h": "dab58e072787a09041b2812d31c10c26",
+    "executor/src/node_executor.cpp": "9642ac4b8a74fad19220e9a4b2ce19a0",
+    "budget/CMakeLists.txt": "e2bfe52bc6b5b108520142b778f1bfab",
+    "budget/include/budget/budget_controller.h": "9384a41e11ec333c69c6ab72704ef884",
+    "budget/src/budget_controller.cpp": "66ef10a92d1d011fb7952c44099a8230"
+  }
+}
