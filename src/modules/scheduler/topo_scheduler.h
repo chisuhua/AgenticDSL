@@ -36,6 +36,10 @@ public:
     // Method for DSLEngine to call to add new graphs dynamically
     void append_dynamic_graphs(std::vector<ParsedGraph> new_graphs);
 
+    std::vector<TraceRecord> get_last_traces() const {
+        return session_.get_trace_exporter().get_traces();
+    }
+
 private:
     const std::vector<ParsedGraph>* full_graphs_ = nullptr; // ← 新增
     ResourceManager resource_manager_; // ← 成员变量，非全局单例

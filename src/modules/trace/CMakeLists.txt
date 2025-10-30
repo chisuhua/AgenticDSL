@@ -1,5 +1,5 @@
-add_library(agenticdsl_modules_trace
-    src/trace_exporter.cpp
+add_library(agenticdsl_modules_trace STATIC
+    trace_exporter.cpp
     # ... 其他 trace 源文件 ...
 )
 target_include_directories(agenticdsl_modules_trace PUBLIC include)

@@ -42,14 +42,6 @@ include_directories(
     ${YAML_CPP_INCLUDE_DIR}
 )
 
-# 定义 common 目录路径
-set(COMMON_INCLUDE_DIRS
-    ${CMAKE_CURRENT_SOURCE_DIR}/src/common/llm
-    ${CMAKE_CURRENT_SOURCE_DIR}/src/common/tools
-    ${CMAKE_CURRENT_SOURCE_DIR}/src/common/utils
-)
-
-# 创建一个 INTERFACE 库来封装 common 依赖和包含路径
 add_library(agenticdsl_common STATIC
     src/common/llm/llama_adapter.cpp
     src/common/tools/registry.cpp
@@ -67,7 +59,7 @@ add_subdirectory(src/modules/trace)
 add_subdirectory(src/modules/library)
 add_subdirectory(src/modules/system)
 
-add_library(agenticdsl_core
+add_library(agenticdsl_core STATIC
     src/core/engine.cpp
 )
 
@@ -81,14 +73,21 @@ target_link_libraries(agenticdsl_core
     agenticdsl_modules_trace   # v3.1
     agenticdsl_modules_library
     agenticdsl_modules_system
-    # ... tools, llm ...
+    Threads::Threads
 )
-# 创建库
-#add_library(agenticdsl SHARED ${SOURCES})
-#target_link_libraries(agenticdsl PRIVATE
-#    ${LLAMA_LIB} # 链接到由 external/llama.cpp 创建的目标
-#    Threads::Threads
-#    yaml-cpp
-#)
 
-add_subdirectory(tests)
+# --- Sample: agent_basic ---
+add_executable(agent_basic
+    examples/agent_basic/main.cpp
+)
+
+target_link_libraries(agent_basic
+    agenticdsl_core
+    ${LLAMA_LIB}
+    yaml-cpp
+)
+
+# --- Tests (Optional) ---
+if(AGENTICDSL_BUILD_TESTS)
+    add_subdirectory(tests)
+endif()

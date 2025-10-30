@@ -1,6 +1,7 @@
 // modules/executor/src/node_executor.cpp
 #include "executor/node_executor.h"
 #include "common/utils/template_renderer.h" // 引入 InjaTemplateRenderer (for rendering)
+#include "modules/parser/markdown_parser.h" // ← 新增：包含 MarkdownParser
 #include <stdexcept>
 #include <inja/inja.hpp> // For RenderError
 #include <algorithm> // For std::find
@@ -10,7 +11,7 @@
 namespace agenticdsl {
 
 NodeExecutor::NodeExecutor(ToolRegistry& tool_registry, LlamaAdapter* llm_adapter)
-    : tool_registry_(tool_registry), llm_adapter_(llm_adapter) {
+    : tool_registry_(tool_registry), llm_adapter_(llm_adapter), markdown_parser_() {
     // llm_adapter_ 可能为 nullptr，NodeExecutor 需要处理这种情况
 }
 
@@ -66,6 +67,7 @@ void NodeExecutor::check_permissions(const std::vector<std::string>& perms, cons
     }
     // 例如，检查 perms 中是否包含 "network" 或 "tool: web_search" 等
     // 这里只是示例，实际权限检查逻辑会更复杂
+}
 
 Context NodeExecutor::execute_start(const StartNode* node, const Context& ctx) {
     // Start 节点通常不修改上下文，直接返回
@@ -99,7 +101,7 @@ Context NodeExecutor::execute_llm_call(const LLMCallNode* node, const Context& c
     Context new_context = ctx;
     try {
         // 使用 PromptBuilder 注入库信息
-        std::string rendered_prompt = PromptBuilder::inject_libraries_into_prompt(node->prompt_template, ctx);
+        std::string rendered_prompt = InjaTemplateRenderer::render(node->prompt_template, ctx);
 
         std::string llm_response = llm_adapter_->generate(rendered_prompt);
 
@@ -243,11 +245,13 @@ Context NodeExecutor::execute_join(const JoinNode* node, const Context& ctx) {
 Context NodeExecutor::execute_generate_subgraph(const GenerateSubgraphNode* node, const Context& ctx) {
     Context new_context = ctx;
     try {
-        // 1. Inject available_subgraphs and budget info into prompt
-        std::string rendered_prompt = PromptBuilder::inject_libraries_into_prompt(node->prompt_template, ctx);
+        if (!ctx.contains("__rendered_prompt__")) {
+            throw std::runtime_error("Missing __rendered_prompt__ in context for GenerateSubgraphNode");
+        }
+        std::string rendered_prompt = ctx.at("__rendered_prompt__").get<std::string>();
         // Add budget info to prompt context if needed by LLM
-        Context prompt_ctx = ctx;
-        prompt_ctx["available_subgraphs"] = PromptBuilder::build_available_libraries_context();
+        //Context prompt_ctx = ctx;
+        //prompt_ctx["available_subgraphs"] = PromptBuilder::build_available_libraries_context();
          // Add budget info (nodes_left, depth_left, etc.) - This requires access to ExecutionSession's budget
          // For now, assume budget info is added by the calling context or PromptBuilder
          // prompt_ctx["budget"] = ...; // Access budget from ExecutionSession
@@ -266,7 +270,7 @@ Context NodeExecutor::execute_generate_subgraph(const GenerateSubgraphNode* node
         // For this executor, assume a global or injected mechanism or return the result for the scheduler to handle.
         // Let's assume the scheduler calls a parser and handles the dynamic graph registration.
         // Here, we just parse and return the generated paths in the context.
-        auto new_graphs = MarkdownParser::parse_from_string(generated_dsl); // Reuse parser
+        auto new_graphs = markdown_parser_.parse_from_string(generated_dsl); // ← 通过实例调用
         std::vector<std::string> dynamic_paths; // Collect paths of generated graphs
         for (auto& graph : new_graphs) {
             if (graph.path.rfind("/dynamic/", 0) == 0) { // Ensure it's dynamic

@@ -1,6 +1,8 @@
 // src/core/engine.cpp
-#include "agenticdsl/core/engine.h"
-#include "agenticdsl/llm/llama_adapter.h"
+#include "engine.h"
+#include "common/llm/llama_adapter.h"
+#include "modules/scheduler/topo_scheduler.h"
+#include "modules/system/system_nodes.h"
 #include <fstream>
 #include <sstream>
 #include <iostream>
@@ -101,31 +103,24 @@ std::unique_ptr<DSLEngine> DSLEngine::from_file(const std::string& file_path) {
 
 DSLEngine::DSLEngine(std::vector<ParsedGraph> initial_graphs)
     : full_graphs_(std::move(initial_graphs)),
-      tool_registry_(), // ← 构造时注册默认工具
-      executor_(std::make_unique<DAGExecutor>(full_graphs_, tool_registry_)) { // ← 传入 tool_registry_
+      tool_registry_() {
     std::cout << "Graphs loaded: " << full_graphs_.size() << std::endl;
-    for (auto& g : full_graphs_) {
-        std::cout << "  Graph: " << g.path << " with " << g.nodes.size() << " nodes" << std::endl;
-        for (auto& n : g.nodes) {
-            std::cout << "    - " << n->path << " (type: " << static_cast<int>(n->type) << ")" << std::endl;
-        }
-    }
 }
 
 ExecutionResult DSLEngine::run(const Context& context) {
     // 提取预算（从 /__meta__）
     std::optional<ExecutionBudget> budget;
-    for (const auto& g : full_graphs_) {
+    for (auto& g : full_graphs_) {
         if (g.budget.has_value()) {
-            budget = g.budget;
+            budget = std::move(g.budget);
             break;
         }
     }
 
     // 创建调度器
     TopoScheduler::Config config;
-    config.initial_budget = budget;
-    TopoScheduler scheduler(config, tool_registry_, llama_adapter_.get());
+    config.initial_budget = std::move(budget);
+    TopoScheduler scheduler(std::move(config), tool_registry_, llama_adapter_.get(), &full_graphs_);
 
     // 注册所有节点（包括系统节点）
     auto sys_nodes = create_system_nodes();
@@ -147,6 +142,8 @@ ExecutionResult DSLEngine::run(const Context& context) {
     auto result = scheduler.execute(context);
     g_current_llm_adapter = prev;
 
+    last_traces_ = scheduler.get_last_traces();
+
     return result;
 }
 
@@ -154,7 +151,6 @@ void DSLEngine::append_graphs(std::vector<ParsedGraph> new_graphs) {
     for (auto& graph : new_graphs) {
         full_graphs_.push_back(std::move(graph));
     }
-    executor_ = std::make_unique<DAGExecutor>(full_graphs_, tool_registry_);
 }
 
 void DSLEngine::continue_with_generated_dsl(const std::string& generated_dsl) {

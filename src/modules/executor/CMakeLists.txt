@@ -1,5 +1,6 @@
 add_library(agenticdsl_modules_executor STATIC
     node_executor.cpp
+    node.cpp
     # ... 其他 executor 源文件 ...
 )
 target_include_directories(agenticdsl_modules_executor PUBLIC include)
