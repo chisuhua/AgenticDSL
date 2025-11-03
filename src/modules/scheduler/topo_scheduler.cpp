@@ -121,6 +121,12 @@ void TopoScheduler::build_dag() {
         // Dynamic wait_for (expressions resolved at runtime) is handled in execute_node loop
     }
 
+    std::cout << "[DEBUG] Ready queue size: " << ready_queue_.size() << std::endl;
+    while (!ready_queue_.empty()) {
+        std::cout << "  - " << ready_queue_.front() << std::endl;
+        ready_queue_.pop();
+    }
+
     for (const auto& node_ptr : all_nodes_) {
         NodePath path = node_ptr->path;
         // Skip system nodes from initial ready queue if desired
@@ -134,6 +140,26 @@ void TopoScheduler::build_dag() {
 
 ExecutionResult TopoScheduler::execute(Context initial_context) {
     Context context = std::move(initial_context);
+
+    std::optional<NodePath> entry_point;
+    if (full_graphs_) {
+        for (const auto& graph : *full_graphs_) {
+            if (graph.path == "/__meta__" && graph.metadata.contains("entry_point")) {
+                entry_point = graph.metadata["entry_point"].get<std::string>();
+                break;
+            }
+        }
+    }
+
+    if (entry_point.has_value()) {
+        // 清空 ready_queue_，强制从 entry_point 开始
+        std::queue<NodePath> empty;
+        ready_queue_.swap(empty);
+        if (node_map_.count(entry_point.value()) == 0) {
+            return {false, "Entry point not found: " + entry_point.value(), context, std::nullopt};
+        }
+        ready_queue_.push(entry_point.value());
+    }
 
     while (!ready_queue_.empty() || !session_.get_pending_dynamic_deps().empty() || is_executing_fork_branches_) { // Continue while queue has items OR fork branches are running
         NodePath current_path;
