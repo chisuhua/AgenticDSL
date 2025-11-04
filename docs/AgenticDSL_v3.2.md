@@ -1,4 +1,4 @@
-# AgenticDSL v3.1 规范  
+# AgenticDSL  规范  
 **安全 · 可终止 · 可调试 · 可复用 · 可契约 · 可验证**
 
 ---
@@ -30,21 +30,21 @@ AgenticDSL 是一套 **AI-Native 的声明式动态 DAG 语言**，专为单智�
 
 ---
 
-## 二、节点抽象层级（v3.1 核心增强）
+## 二、节点抽象层级（ 核心增强）
 
 AgenticDSL 节点分为三层，确保语义清晰与可演进性：
 
 | 层级 | 说明 | 约束 |
 |------|------|------|
 | **1. 执行原语层（叶子节点）** | 规范内置、不可扩展的最小操作单元 | 禁止用户自定义新类型 |
-| **2. 推理原语层（规范子图）** | 规范提供的稳定推理模式实现 | 路径：`/lib/reasoning/**`，版本稳定，由规范维护 |
+| **2. 内存记忆和推理原语层（规范子图）** | 规范提供的稳定内存记忆接口和推理模式实现 | 路径：`/lib/memory/**`, `/lib/reasoning/**`，版本稳定，由规范维护 |
 | **3. 知识应用层（标准库子图）** | 用户/社区扩展的领域逻辑 | 路径：`/lib/workflow/**`, `/lib/knowledge/**`，需带 `signature` |
 
 > ✅ **所有复杂逻辑必须通过子图组合实现，禁止在叶子节点中编码高层语义。**
 
 ---
 
-## 三、术语表（v3.1 新增）
+## 三、术语表（ 新增）
 
 | 术语 | 定义 |
 |------|------|
@@ -52,9 +52,10 @@ AgenticDSL 节点分为三层，确保语义清晰与可演进性：
 | **动态生长（Dynamic Growth）** | 通过 `generate_subgraph` 节点在运行时生成新子图并注册到 `/dynamic/**` |
 | **契约（Contract）** | 由 `signature` 定义的输入/输出接口规范，用于调用前校验与调用后验证 |
 | **软终止（Soft Termination）** | 子图执行结束时返回调用者上下文，而非终止整个 DAG |
-| **核心标准库（Core SDK）** | v3.1 强制要求实现的 `/lib/**` 子图集合（见附录 C） |
+| **核心标准库（Core SDK）** |  强制要求实现的 `/lib/**` 子图集合（见附录 C） |
 | **执行原语层** | 内置叶子节点（如 `assign`, `assert`），不可扩展 |
 | **推理原语层** | 规范维护的 `/lib/reasoning/**` 子图，实现通用推理模式 |
+| **内存记忆原语层** | 规范维护的 `/lib/memory/**` 子图，实现通用记忆API接口 |
 
 ---
 
@@ -73,8 +74,8 @@ AgenticDSL 节点分为三层，确保语义清晰与可演进性：
 | `error_on_conflict`（默认） | 任一字段在多个分支中被写入 → 报错终止 |
 | `last_write_wins` | 以最后完成的节点写入值为准（非确定性，仅用于幂等操作） |
 | `deep_merge` | 递归合并对象；**数组替换（非拼接）**；标量覆盖（遵循 RFC 7396） |
-| **`array_concat`**（v3.0 新增） | **数组拼接**（保留顺序，允许重复） |
-| **`array_merge_unique`**（v3.0 新增） | 数组拼接 + 去重（基于 JSON 序列化值） |
+| **`array_concat`** | **数组拼接**（保留顺序，允许重复） |
+| **`array_merge_unique`** | 数组拼接 + 去重（基于 JSON 序列化值） |
 
 ✅ **字段级策略继承**  
 - 节点可声明 `context_merge_policy`，覆盖全局策略  
@@ -169,7 +170,7 @@ AgenticDSL 节点分为三层，确保语义清晰与可演进性：
 - **`soft` 语义**：  
   > 执行器维护调用栈。`soft end` 弹出栈顶，跳转至调用者的 `next` 节点。若栈空，则等同 `hard`。
 
-### 5.7 `generate_subgraph`（v3.0 新增，原 `llm_call`）
+### 5.7 `generate_subgraph`
 - **语义**：**委托 LLM 生成一个或多个新的可执行子图（DAG 片段）**  
   > ⚠️ **不得用于调用已有子图或生成自然语言！**
 - **关键字段**：
@@ -198,6 +199,7 @@ AgenticDSL 节点分为三层，确保语义清晰与可演进性：
 - 路径命名空间：
   - `/lib/**`：**静态标准库**（必须带 `signature`）
     - `/lib/reasoning/**`：推理原语（规范维护）
+    - `/lib/memory/**`：内存记忆原语（规范维护）
     - `/lib/workflow/**`：行动流模块
     - `/lib/knowledge/**`：知识单元
     - `/lib/human/**`：人机协作模块
@@ -328,7 +330,7 @@ permissions:
 - `on_error` 可跳转至修复子图（如 `/self/repair`）
 - `curriculum_level` 支持课程学习调度
 
-### 8.5 开发模式支持（v3.1 新增）
+### 8.5 开发模式支持
 
 - 在 `/__meta__` 中声明 `mode: dev | prod`
 - **开发模式**（`dev`）：
@@ -339,6 +341,20 @@ permissions:
   - 强制 `signature_validation: strict`
   - 禁用 `last_write_wins`
   - 最小权限沙箱强制启用
+
+### 8.6 Trace 增强（可观测性）
+
+在 `mode: dev` 下，Trace 必须包含快照信息（若存在）：
+
+```json
+{
+  "node_path": "/main/solve",
+  "ctx_snapshot_available": true,
+  "ctx_snapshot_key": "/main/solve",
+  "context_snapshot": { ... }  // 可选，若 budget 允许
+}
+```
+
 
 ---
 
@@ -376,45 +392,534 @@ permissions:
 
 ---
 
-## 十、完整示例
+## 十、Context 快照机制规范（执行器层）
 
-```markdown
+### 10.1 新增上下文只读字段：`$.ctx_snapshots`
+
+执行器必须在运行时维护一个**只读映射** `$.ctx_snapshots`，其结构为：
+
+```json
+{
+  "ctx_snapshots": {
+    "/main/step3": { /* 完整上下文快照 */ },
+    "/lib/reasoning/hypothesis_test@v1": { /* 快照 */ }
+  }
+}
+```
+
+- **键（key）**：触发快照的**节点路径**（如 `/main/solve`）
+- **值（value）**：该节点**执行前**的完整上下文副本（深拷贝）
+- **访问权限**：只读。任何 `assign`、`tool_call` 等节点**不得写入** `$.ctx_snapshots`
+- **生命周期**：随 DAG 执行结束自动销毁
+
+### 10.2 快照触发策略（自动、可配置）
+
+执行器**自动**在以下节点类型执行前保存快照（仅当 `mode: dev` 或显式启用）：
+
+| 节点类型 | 触发条件 |
+|--------|--------|
+| `fork` | 总是触发（分支探索前） |
+| `generate_subgraph` | 总是触发（动态生成前） |
+| `assert` | 总是触发（验证前） |
+| `tool_call` / `codelet_call` | **仅当声明 `rollback_on_failure: true`** |
+| 其他节点 | 不触发（除非通过元指令显式请求） |
+
+> ✅ **生产模式（`mode: prod`）默认禁用快照**，可通过 `execution_budget.enable_snapshots: true` 显式开启。
+
+### 10.3 快照资源控制
+
+快照受全局预算约束：
+
+```yaml
 ### AgenticDSL `/__meta__`
-yaml
-version: "3.1"
+execution_budget:
+  max_snapshots: 5        # 默认：dev=10, prod=0
+  snapshot_max_size_kb: 512  # 单快照最大体积（压缩后）
+```
+
+- 超出 `max_snapshots` 时，**按 FIFO 策略丢弃最早快照**
+- 快照序列化必须使用紧凑 JSON（禁止格式化空格）
+
+### 10.4 快照恢复方式（通过标准 `assign`）
+
+用户可通过 `assign` 节点恢复快照（通常在 `on_failure` 路径中）：
+
+```yaml
+type: assign
+assign:
+  expr: "{{ $.ctx_snapshots['/main/step3'] }}"
+  path: ""  # 全量覆盖上下文
+# 或
+assign:
+  expr: "{{ $.ctx_snapshots['/main/step3'].user_input }}"
+  path: "user_input"  # 部分恢复
+```
+
+> ⚠️ **安全限制**：表达式中对 `$.ctx_snapshots` 的访问必须为**静态字符串键**（禁止动态计算键名），防止信息泄露。
+
+---
+
+## 十一、推理原语层
+
+以下为规范推荐的 **带回溯能力的推理原语子图**，应纳入 `/lib/reasoning/**`。
+
+### 11.1 子图：`/lib/reasoning/with_rollback`
+
+#### AgenticDSL `/lib/reasoning/with_rollback`
+```yaml
+signature:
+  inputs:
+    - name: try_path
+      type: string
+      description: "主尝试路径（如 '/dynamic/solve_attempt'）"
+      required: true
+    - name: fallback_path
+      type: string
+      description: "回溯后执行路径"
+      required: true
+    - name: checkpoint_node
+      type: string
+      description: "用于恢复的快照节点路径（默认为本节点路径）"
+      required: false
+  outputs:
+    - name: success
+      type: boolean
+      required: true
+  version: "1.0"
+  stability: stable
+
+# 自动触发快照（因是 assert 类节点）
+type: assert
+condition: "true"  # 无条件通过，仅用于触发快照
+on_failure: "/self/never_called"  # 占位
+
+next: "{{ $.try_path }}"
+```
+
+#### AgenticDSL `/lib/reasoning/with_rollback/fallback`
+```yaml
+# 此节点在 try_path 失败后由调用者跳转至此
+type: assign
+assign:
+  expr: "{{ $.ctx_snapshots['{{ $.checkpoint_node or \"/lib/reasoning/with_rollback\" }}'] }}"
+  path: ""  # 恢复上下文
+next: "{{ $.fallback_path }}"
+```
+
+### 使用示例：
+
+#### AgenticDSL `/main/task`
+```yaml
+type: generate_subgraph
+prompt_template: "尝试解方程 {{ $.expr }}"
+next: "/lib/reasoning/with_rollback@v1"
+
+### AgenticDSL `/lib/reasoning/with_rollback@v1`
+# 自动保存快照 at /lib/reasoning/with_rollback
+# 执行 /dynamic/solve_attempt
+# 若失败，跳转至 /main/task/on_failure → 调用 fallback 子图
+```
+
+
+支持多假设并行探索，失败分支自动回退：
+
+#### AgenticDSL `/lib/reasoning/hypothesis_branch`
+```yaml
+signature:
+  inputs:
+    - name: hypotheses
+      type: array
+      items: { type: string }  # 子图路径列表
+      required: true
+  outputs:
+    - name: selected_hypothesis
+      type: string
+      required: true
+  version: "1.0"
+  stability: experimental
+
+type: fork
+fork:
+  branches: "{{ $.hypotheses }}"
+context_merge_policy:
+  "hypothesis_result": error_on_conflict  # 仅允许一个成功
+on_failure: "/self/rollback_all"
+```
+
+##### AgenticDSL `/lib/reasoning/hypothesis_branch/rollback_all`
+```yaml
+# 清理所有分支写入，恢复到 fork 前状态
+type: assign
+assign:
+  expr: "{{ $.ctx_snapshots['/lib/reasoning/hypothesis_branch'] }}"
+  path: ""
+next: "/self/fallback_strategy"
+```
+
+
+---
+
+## 十二、内存记忆原语
+
+统一管理可复用的安全保障的上下文路径（如 `user.plan.date` vs `state.travel.departure`），定义标准输入/输出契约，通过可验证的记忆子图提供标准化的记忆接口。
+
+
+| 原则 | 实现方式 |
+|------|--------|
+| **契约驱动** | 所有 `/lib/memory/**` 子图必须声明 `signature` |
+| **最小权限** | 显式声明 `permissions`（如 `memory: state_write`） |
+| **三层抽象对齐** | 作为 **知识应用层**（`/lib/knowledge/**` 的子集） |
+| **可终止 & 可观测** | 每个操作生成结构化 Trace，含 `memory_op_type` |
+| **向后兼容** | 不修改现有执行原语，仅扩展标准库 |
+
+
+### 12.1 核心接口定义（Core Memory SDK）
+
+所有子图路径位于 `/lib/memory/**`，稳定性默认为 `stable`（除非注明 `experimental`）。
+
+#### 12.1.1 结构化状态管理（中期记忆）
+
+##### AgenticDSL `/lib/memory/state/set@v1`
+```yaml
+signature:
+  inputs:
+    - name: key
+      type: string
+      description: "状态路径，如 'travel.departure_date'"
+      required: true
+    - name: value
+      type: any
+      required: true
+  outputs:
+    - name: success
+      type: boolean
+      required: true
+  version: "1.0"
+  stability: stable
+permissions:
+  - memory: state_write
+type: assign
+assign:
+  expr: "{{ $.value }}"
+  path: "memory.state.{{ $.key }}"
+context_merge_policy:
+  "memory.state.{{ $.key }}": last_write_wins
+```
+
+##### AgenticDSL `/lib/memory/state/get_latest@v1`
+```yaml
+signature:
+  inputs:
+    - name: key
+      type: string
+      required: true
+  outputs:
+    - name: value
+      type: any
+      required: false  # 可能为空
+  version: "1.0"
+type: assign
+assign:
+  expr: "{{ $.memory.state[key] | default(null) }}"
+  path: "result.value"
+```
+
+#### 12.1.2 时间知识图谱操作（中期+长期）
+
+> 注：实际存储由外部系统（如 Graphiti）实现，本子图仅封装调用。
+
+##### AgenticDSL `/lib/memory/kg/write_fact@v1`
+```yaml
+signature:
+  inputs:
+    - name: head
+      type: string
+      required: true
+    - name: relation
+      type: string
+      required: true
+    - name: tail
+      type: any
+      required: true
+    - name: timestamp
+      type: string
+      format: "ISO8601"
+      required: false  # 默认为 $.now
+  outputs:
+    - name: fact_id
+      type: string
+  version: "1.0"
+permissions:
+  - kg: temporal_fact_insert
+type: tool_call
+tool: kg_write_fact
+arguments:
+  head: "{{ $.head }}"
+  relation: "{{ $.relation }}"
+  tail: "{{ $.tail }}"
+  timestamp: "{{ $.timestamp or $.now }}"
+output_mapping:
+  fact_id: "result.fact_id"
+```
+
+##### AgenticDSL `/lib/memory/kg/query_latest@v1`
+```yaml
+signature:
+  inputs:
+    - name: head
+      type: string
+      required: true
+    - name: relation
+      type: string
+      required: true
+  outputs:
+    - name: tail
+      type: any
+    - name: timestamp
+      type: string
+  version: "1.0"
+permissions:
+  - kg: temporal_fact_read
+type: tool_call
+tool: kg_query_latest
+arguments:
+  head: "{{ $.head }}"
+  relation: "{{ $.relation }}"
+output_mapping:
+  tail: "result.tail"
+  timestamp: "result.timestamp"
+```
+
+#### 12.1.3 语义记忆操作（长期记忆）
+
+##### AgenticDSL `/lib/memory/vector/store@v1`
+```yaml
+signature:
+  inputs:
+    - name: text
+      type: string
+      required: true
+    - name: metadata
+      type: object
+      required: false
+      schema: { type: object }
+  outputs:
+    - name: success
+      type: boolean
+  version: "1.0"
+permissions:
+  - vector: store
+type: tool_call
+tool: vector_store
+arguments:
+  text: "{{ $.text }}"
+  metadata:
+    user_id: "{{ $.user.id }}"
+    timestamp: "{{ $.now }}"
+    task_id: "{{ $.task.id }}"
+    extra: "{{ $.metadata | default({}) }}"
+output_mapping:
+  success: "result.success"
+```
+
+##### AgenticDSL `/lib/memory/vector/recall@v1`
+```yaml
+signature:
+  inputs:
+    - name: query
+      type: string
+      required: true
+    - name: top_k
+      type: integer
+      default: 3
+  outputs:
+    - name: memories
+      type: array
+      schema:
+        type: array
+        items:
+          type: object
+          properties:
+            text: { type: string }
+            score: { type: number }
+            metadata: { type: object }
+  version: "1.0"
+permissions:
+  - vector: recall
+type: tool_call
+tool: vector_recall
+arguments:
+  query: "{{ $.query }}"
+  top_k: "{{ $.top_k }}"
+  filter:
+    user_id: "{{ $.user.id }}"
+output_mapping:
+  memories: "result.memories"
+```
+
+
+#### 11.1.4 用户画像管理（长期记忆）
+
+##### AgenticDSL `/lib/memory/profile/update@v1`
+```yaml
+signature:
+  inputs:
+    - name: attributes
+      type: object
+      required: true
+      schema: { type: object }
+  outputs:
+    - name: success
+      type: boolean
+  version: "1.0"
+permissions:
+  - profile: update
+type: tool_call
+tool: profile_update
+arguments:
+  user_id: "{{ $.user.id }}"
+  attributes: "{{ $.attributes }}"
+output_mapping:
+  success: "result.success"
+```
+
+##### AgenticDSL `/lib/memory/profile/get@v1`
+```yaml
+signature:
+  inputs: []
+  outputs:
+    - name: profile
+      type: object
+      schema: { type: object }
+  version: "1.0"
+permissions:
+  - profile: read
+type: tool_call
+tool: profile_get
+arguments:
+  user_id: "{{ $.user.id }}"
+output_mapping:
+  profile: "result.profile"
+```
+
+
+
+### 12.2 权限模型（Permissions Schema）
+
+| 权限声明 | 说明 | 最小权限范围 |
+|--------|------|------------|
+| `memory: state_write` | 写入 `memory.state.*` | 仅限 Context 写入 |
+| `kg: temporal_fact_insert` | 插入时间事实 | 仅限当前用户图谱 |
+| `kg: temporal_fact_read` | 查询时间事实 | 仅限当前用户 |
+| `vector: store` | 存储语义记忆 | 自动附加 `user_id` |
+| `vector: recall` | 检索语义记忆 | 自动过滤 `user_id` |
+| `profile: update` | 更新用户画像 | 仅限当前用户 |
+| `profile: read` | 读取用户画像 | 仅限当前用户 |
+
+> ✅ 执行器必须在调度前验证权限，未授权 → 跳转 `on_error`。
+
+
+### 12.3 工具注册要求（Tool Registration）
+
+为支持上述子图，执行器必须预注册以下工具（由开发者实现）：
+
+| 工具名 | 输入 | 输出 | 参考实现 |
+|-------|------|------|--------|
+| `kg_write_fact` | `{head, relation, tail, timestamp}` | `{fact_id}` | Graphiti / Cognee Adapter |
+| `kg_query_latest` | `{head, relation}` | `{tail, timestamp}` | Graphiti / Neo4j Cypher |
+| `vector_store` | `{text, metadata}` | `{success}` | LightRAG + Qdrant/FAISS |
+| `vector_recall` | `{query, top_k, filter}` | `{memories[]}` | LightRAG Retriever |
+| `profile_update` | `{user_id, attributes}` | `{success}` | Mem0 API Wrapper |
+| `profile_get` | `{user_id}` | `{profile}` | Mem0 API Wrapper |
+
+> 🔧 工具实现**不要求**纳入规范，但**接口契约必须一致**。
+> 通过 **标准化记忆调用语义**，使 AgenticDSL 应用能够：
+- **安全地** 使用混合记忆；
+- **无需重复造轮子**；
+- **无缝切换记忆后端**；
+- **支持 LLM 自动生成记忆逻辑**。
+
+### 12.4 可观测性（Trace Schema 扩展）
+
+所有记忆操作 Trace 必须包含：
+
+```json
+{
+  "memory_op_type": "state_set | kg_write | vector_store | profile_update",
+  "memory_key": "travel.departure_date",
+  "backend_used": "context | graphiti | qdrant | mem0",
+  "latency_ms": 12,
+  "user_id": "user_123"
+}
+```
+
+### 12.5 示例：订票助手使用标准记忆接口
+
+#### AgenticDSL '/main/booking'
+```yaml
+type: assign
+assign:
+  expr: "2025-11-20"
+  path: "user_input.date"
+next: "/lib/memory/state/set@v1?key=travel.departure_date&value={{ $.user_input.date }}"
+```
+
+#### AgenticDSL '/main/confirm'
+```yaml
+type: assign
+assign:
+  expr: "已记录您的出发日期为 {{ $.memory.state.travel.departure_date }}"
+  path: "response.text"
+next: "/end"
+```
+
+> ✅ 应用层无需关心记忆后端，仅依赖标准接口。
+
+---
+
+
+## 十三、完整示例
+
+### AgenticDSL `/__meta__`
+```yaml
+version: "1.0"
 mode: dev  # ✅ 开发模式
 execution_budget:
   max_nodes: 20
   max_subgraph_depth: 2
   max_duration_sec: 30
 context_merge_strategy: "error_on_conflict"
+```
 
 ### AgenticDSL `/main/solve_equation`
-yaml
+```yaml
 type: assign
 assign:
   expr: "x^2 + 2x + 1 = 0"
 next: "/lib/reasoning/solve_quadratic@v1"
+```
 
 ### AgenticDSL `/main/verify`
-yaml
+```yaml
 type: assert
 condition: "len($.roots) == 1 and $.roots[0] == -1"
 expected_output:
   roots: [-1]
 on_success: "archive_to('/lib/solved/quadratic@v1')"
 on_failure: "/self/repair"
+```
 
 ### AgenticDSL `/self/repair`
-yaml
+```yaml
 type: generate_subgraph
 prompt_template: "方程 {{ $.expr }} 求解失败。请重写为标准形式并生成新DAG。"
 signature_validation: warn
 on_signature_violation: "/self/fallback"
 next: "/dynamic/repair_123"
+```
 
 ### AgenticDSL `/lib/human/approval`  # ✅ Core SDK 示例
-yaml
+```yaml
 signature:
   inputs:
     - name: request
@@ -471,7 +976,7 @@ output_mapping:
 
 ---
 
-## 附录 C：核心标准库（Core SDK）v3.1 必须实现清单
+## 附录 C：核心标准库（Core SDK） 必须实现清单
 
 | 路径 | 用途 | 稳定性 |
 |------|------|--------|
@@ -485,10 +990,27 @@ output_mapping:
 
 ---
 
-> **AgenticDSL v3.1 是迈向 AI 原生操作系统的坚实一步。**  
+## 附录 D：记忆原语层的演进路线
+
+- 6 个核心子图（`set`, `get_latest`, `write_fact`, `query_latest`, `store`, `recall`, `update`, `get`）
+- 实验性：
+  - `/lib/memory/orchestrator/hybrid_recall@v1`（融合结构化+语义）
+  - 支持记忆 TTL（`assign` + `$.now` + 过期策略）
+
+
+### 与现有系统的映射
+
+| AgenticDSL 接口 | 推荐后端实现 |
+|----------------|------------|
+| `/lib/memory/state/**` | Context（内存） |
+| `/lib/memory/kg/**` | Graphiti（首选）、Cognee |
+| `/lib/memory/vector/**` | LightRAG + Qdrant/FAISS |
+| `/lib/memory/profile/**` | Mem0 |
+
+
+---  
+
+> **AgenticDSL  是迈向 AI 原生操作系统的坚实一步。**  
 > 它不仅定义了“如何运行思维”，更通过 **三层抽象 + Core SDK + 开发模式 + JSON Schema 契约**，  
 > 为构建**可靠、可协作、可进化的智能体生态**提供了工程基石。
 
----  
-**© 2025 AgenticDSL Working Group. All rights reserved.**  
-*本规范采用 CC BY-SA 4.0 许可，欢迎社区共建。*

@@ -1,6 +1,8 @@
 // src/core/engine.cpp
-#include "agenticdsl/core/engine.h"
-#include "agenticdsl/llm/llama_adapter.h"
+#include "engine.h"
+#include "common/llm/llama_adapter.h"
+#include "modules/scheduler/topo_scheduler.h"
+#include "modules/system/system_nodes.h"
 #include <fstream>
 #include <sstream>
 #include <iostream>
@@ -100,42 +102,55 @@ std::unique_ptr<DSLEngine> DSLEngine::from_file(const std::string& file_path) {
 }
 
 DSLEngine::DSLEngine(std::vector<ParsedGraph> initial_graphs)
-    : full_graphs_(std::move(initial_graphs)) {
-std::cout << "Graphs loaded: " << full_graphs_.size() << std::endl;
-for (auto& g : full_graphs_) {
-    std::cout << "  Graph: " << g.path << " with " << g.nodes.size() << " nodes" << std::endl;
-    for (auto& n : g.nodes) {
-        std::cout << "    - " << n->path << " (type: " << static_cast<int>(n->type) << ")" << std::endl;
-    }
-}
-    executor_ = std::make_unique<DAGExecutor>(full_graphs_);
-
+    : full_graphs_(std::move(initial_graphs)),
+      tool_registry_() {
+    std::cout << "Graphs loaded: " << full_graphs_.size() << std::endl;
 }
 
 ExecutionResult DSLEngine::run(const Context& context) {
-    Context exec_context = context;
+    // 提取预算（从 /__meta__）
+    std::optional<ExecutionBudget> budget;
+    for (auto& g : full_graphs_) {
+        if (g.budget.has_value()) {
+            budget = std::move(g.budget);
+            break;
+        }
+    }
 
-    //exec_context["__llm__"] = nlohmann::json::object();
-    //exec_context["__llm__"]["generate"] = [&](const std::string& prompt) -> std::string {
-    //    return llama_adapter_->generate(prompt);
-    //};
+    // 创建调度器
+    TopoScheduler::Config config;
+    config.initial_budget = std::move(budget);
+    TopoScheduler scheduler(std::move(config), tool_registry_, llama_adapter_.get(), &full_graphs_);
 
+    // 注册所有节点（包括系统节点）
+    auto sys_nodes = create_system_nodes();
+    for (auto& node : sys_nodes) {
+        scheduler.register_node(std::move(node));
+    }
+    for (const auto& graph : full_graphs_) {
+        for (const auto& node : graph.nodes) {
+            if (node) {
+                scheduler.register_node(node->clone());
+            }
+        }
+    }
+    scheduler.build_dag();
+
+    // 执行
     LlamaAdapter* prev = g_current_llm_adapter;
     g_current_llm_adapter = llama_adapter_.get();
+    auto result = scheduler.execute(context);
+    g_current_llm_adapter = prev;
 
-    auto result = executor_->execute(exec_context);
+    last_traces_ = scheduler.get_last_traces();
 
-
-    g_current_llm_adapter = prev; // 恢复
-
-    return {result.success, result.message, result.final_context, result.paused_at};
+    return result;
 }
 
 void DSLEngine::append_graphs(std::vector<ParsedGraph> new_graphs) {
     for (auto& graph : new_graphs) {
         full_graphs_.push_back(std::move(graph));
     }
-    executor_ = std::make_unique<DAGExecutor>(full_graphs_);
 }
 
 void DSLEngine::continue_with_generated_dsl(const std::string& generated_dsl) {
