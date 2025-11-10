@@ -1,12 +1,11 @@
-# AgenticDSL 规范 v3.7
+# AgenticDSL 规范 v3.8  
 **安全 · 可终止 · 可调试 · 可复用 · 可契约 · 可验证**  
-
-> “优秀的 DSL 不是让机器更容易执行，而是让人类更容易表达意图，同时让机器能够可靠地验证这种意图。”  
-> — AgenticDSL 核心哲学
+*“优秀的 DSL 不是让机器更容易执行，而是让人类更容易表达意图，同时让机器能够可靠地验证这种意图。”*  
+— AgenticDSL 核心哲学  
 
 ---
 
-## 一、核心理念与定位
+## 一、核心理念与定位  
 
 ### 1.1 定位  
 AgenticDSL 是一套 **AI-Native 的声明式动态 DAG 语言**，专为单智能体及未来多智能体系统设计，支持：
@@ -36,8 +35,7 @@ AgenticDSL 是一套 **AI-Native 的声明式动态 DAG 语言**，专为单智�
 - **可观测性**：每个节点生成结构化 Trace，支持调试与训练
 
 ---
-
-## 二、节点抽象层级（三层架构 + 交互边界）
+## 二、节点抽象层级（三层架构 + 交互边界）  
 
 AgenticDSL 节点分为三层，确保语义清晰与可演进性：
 
@@ -62,7 +60,7 @@ AgenticDSL 节点分为三层，确保语义清晰与可演进性：
 
 ---
 
-## 三、术语表
+## 三、术语表  
 
 | 术语             | 定义                                                                 |
 |------------------|----------------------------------------------------------------------|
@@ -75,7 +73,7 @@ AgenticDSL 节点分为三层，确保语义清晰与可演进性：
 
 ---
 
-## 四、公共契约
+## 四、公共契约  
 
 ### 4.1 上下文模型（Context）
 
@@ -235,9 +233,57 @@ permissions:
 ### 5.8 `start`
 - `start`：无操作，跳转到 `next`
 
+
+### 5.9 `llm_call`  
+**语义**：调用推理引擎内置的 LLM 推理内核，用于生成文本、结构化输出、流式终止等高级推理行为。  
+**仅可通过 `/lib/reasoning/**` 子图调用，禁止用户在知识应用层或主 DAG 中直接使用。**
+
+#### 字段定义
+| 字段 | 类型 | 必需 | 说明 |
+|------|------|------|------|
+| llm.model | string | ✅ | 模型标识（如 `gpt-4o`, `llama-3-8b`） |
+| llm.seed | integer | ✅ | 确定性种子 |
+| llm.temperature | number | ✅ | 温度（0.0–1.0） |
+| llm.prompt | string | ✅ | 提示词（Inja 渲染后） |
+
+#### 标准可选字段（执行器必须识别，未声明则忽略）
+| 字段 | 类型 | 默认值 | 说明 |
+|------|------|--------|------|
+| llm.max_tokens | integer | 256 | 最大生成长度 |
+| llm.output_schema | object | — | JSON Schema，用于结构化输出约束 |
+| llm.kv_handle | string | — | KV 缓存句柄，用于续写 |
+| llm.stop_condition | string | — | 流式终止条件（如特殊 token 或字符串） |
+| llm.draft_model | string | `"phi-3-mini"` | 推测解码头模型 |
+| llm.max_speculative_tokens | integer | 5 | 推测最大 token 数 |
+
+#### 行为规则
+- 所有字段必须通过 `Inja` 安全渲染（禁止任意代码）
+- 若字段未定义（如 `output_schema`），执行器应忽略而非报错
+- 返回值必须包含 `text` 字段；若支持 KV 复用，可附加 `kv_handle`
+- **Trace 必须记录**：
+  ```json
+  {
+    "llm_call": {
+      "model": "gpt-4o",
+      "prompt_tokens": 120,
+      "completion_tokens": 80,
+      "used_features": ["output_schema", "kv_handle"],
+      "backend_used": "AgenticInfer-v1.4"
+    }
+  }
+  ```
+
+#### 权限要求
+- 必须声明对应推理权限（如 `reasoning: llm_generate`）
+- 未授权 → 跳转 `on_error`（由调用子图定义）
+
+> **注**：`llm_generate_dsl`（5.7）与 `llm_call`（本节）分工明确：
+> - `llm_generate_dsl`：仅用于生成 AgenticDSL 子图（动态 DAG）
+> - `llm_call`：用于通用推理行为（文本、结构化等），语义更广
+
 ---
 
-## 六、统一文档结构
+## 六、统一文档结构  
 
 ### 6.1 路径命名空间（关键强化）
 
@@ -326,6 +372,17 @@ resources:
     name: web_search
     scope: read_only
     capabilities: [search, factual]
+  - type: reasoning
+    capabilities:
+      - text_generation
+      - structured_generate
+      - kv_continuation
+      - stream_output
+      - speculative_decode
+  - type: tool
+    name: native_inference_core
+    scope: internal
+    capabilities: [tokenize, kv_alloc, model_step, compile_grammar, stream_until]
 ```
 
 #### 语义规则：
@@ -357,15 +414,16 @@ resources:
 - `capabilities` 用于语义匹配（如 LLM 选择工具）
 - `rate_limit` 供执行器实现调用限流（非强制，但建议支持）
 
+---
 
 ---
 
-## 七、安全与工程保障
+## 七、安全与工程保障  
 
 ### 7.1 标准库契约强制  
 启动时预加载并校验所有 `/lib/**`；LLM 生成时 `available_subgraphs` 必须含 `signature`
 
-### 7.2 权限与沙箱
+### 7.2 权限与沙箱（补充）
 
 ```yaml
 permissions:
@@ -375,12 +433,23 @@ permissions:
   - generate_subgraph: { max_depth: 2 }
 ```
 
-✅ **权限组合规则**：
-- **交集原则**：节点权限 ∩ 父上下文授权权限  
-- **拒绝优先**：任一缺失 → 跳转 `on_error`  
-- **权限降级**：子图调用时权限**只能减少**
+**权限组合规则**：
+- 交集原则：节点权限 ∩ 父上下文授权权限  
+- 拒绝优先：任一缺失 → 跳转 `on_error`  
+- 权限降级：子图调用时权限**只能减少**
 
 > **资源声明是权限的前置契约**。执行器在启动时验证 `/__meta__/resources` 中声明的资源可用性后，才允许执行声明了对应 `permissions` 的节点。
+
+推理权限类型：
+
+| 权限 | 说明 | 最小权限范围 |
+|------|------|-------------|
+| `reasoning: llm_generate` | 基础文本生成 | 仅限 `llm_call` 调用 |
+| `reasoning: structured_generate` | 结构化输出（需 `output_schema`） | 同上 |
+| `reasoning: stream_output` | 流式终止（需 `stop_condition`） | 同上 |
+| `reasoning: speculative_decode` | 推测解码 | 同上 |
+
+> 权限组合遵循交集原则；未声明 → `on_error`
 
 ### 7.3 可观测性（Trace Schema）  
 兼容 OpenTelemetry，包含：执行状态、上下文变更、输出匹配、LLM 意图、预算快照等
@@ -415,7 +484,7 @@ permissions:
 
 ---
 
-## 八、核心能力规范
+## 八、核心能力规范  
 
 ### 8.1 动态 DAG 执行 + 全局预算
 
@@ -469,10 +538,9 @@ Trace 增强:
 - **单子图节点数**：<50  
 - **预算建议**：`max_nodes: 10 × [预期分支数]`，`max_subgraph_depth: 3`  
 
-
 ---
 
-## 九、LLM 生成指令（System Prompt）
+## 九、LLM 生成指令  
 
 你是一个**推理与行动架构师**，你的任务是生成**可执行、可验证的动态 DAG**，包含：
 - **行动流**：调用工具、与人协作
@@ -506,7 +574,6 @@ Trace 增强:
 - 生成子图时可参考 `available_resources`
 
 ---
-
 ## 十、标准原语层
 
 ### 10.1 子图管理（`/lib/dslgraph/**`）
@@ -602,9 +669,6 @@ Trace 增强:
 
 - `/lib/tool/list_available@v1`
 
-
----
-
 ## 十一、Context 快照机制规范（安全增强）
 
 ### 11.1 快照恢复限制  
@@ -666,6 +730,7 @@ assign:
 | `expected_output` | **单次执行** | 验证：本次任务期望的具体值 | 执行后（Trace 记录，可选告警） |
 
 
+
 ### 附录 D：记忆原语演进路线
 
 - 6 个核心子图（`set`, `get_latest`,  `store`, `recall`, `update`, `get`）
@@ -673,17 +738,6 @@ assign:
   - `/lib/memory/orchestrator/hybrid_recall@v1`（融合结构化+语义）
   - 支持记忆 TTL（`assign` + `$.now` + 过期策略）
 
-
-### 附录 E：版本兼容性策略
-
-- **小版本（3.x）**：向后兼容，仅增功能  
-- **大版本（x.0）**：可能不兼容，提供迁移工具  
-- **签名变更**：`stable` 子图仅可增加字段，不可删除/修改类型  
-- **执行器**：支持多版本共存，路径版本后缀优先  
-
-### 附录 F：适配层参考实现指南（新增）
-
-> **注意**：本附录仅提供参考实现模式，不强制要求。执行器可自由选择实现细节，只要符合接口契约。
 
 ---
 
