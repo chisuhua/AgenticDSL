@@ -1,6 +1,6 @@
 // tests/test_basic.cpp
 #include "catch_amalgamated.hpp"
-#include "agenticdsl/core/engine.h"
+#include "core/engine.h"
 #include "agenticdsl/core/parser.h"
 #include "agenticdsl/core/executor.h"
 #include "agenticdsl/dsl/templates.h"
