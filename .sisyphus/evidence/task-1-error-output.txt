@@ -1,0 +1,39 @@
+[DEBUG] Parsing node at /main/start: {
+  "id": "start",
+  "next": [
+    "/main/query"
+  ],
+  "type": "start"
+}
+[DEBUG] Parsing node at /main/end: {
+  "id": "end",
+  "type": "end"
+}
+[DEBUG] Parsing node at /main/query: {
+  "arguments": {
+    "filter": "active=true",
+    "table": "users"
+  },
+  "next": "/main/analyze",
+  "output_keys": [
+    "db_result"
+  ],
+  "tool": "custom_db_query",
+  "type": "tool_call"
+}
+[DEBUG] Parsing node at /main/analyze: {
+  "assign": {
+    "summary": "Found {{ $.db_result.rows }} active users"
+  },
+  "next": "/end",
+  "type": "assign"
+}
+[DEBUG] Parsing node at /end: {
+  "type": "end"
+}
+register_backend: registered backend CPU (1 devices)
+register_device: registered device CPU (Intel(R) Xeon(R) Platinum)
+gguf_init_from_file: failed to open GGUF file '/home/dev/workspace/AgenticDSL/build/./models/gongjy/MiniMind2-gguf/Q4-MiniMind2-Small.gguf'
+llama_model_load: error loading model: llama_model_loader: failed to load model from /home/dev/workspace/AgenticDSL/build/./models/gongjy/MiniMind2-gguf/Q4-MiniMind2-Small.gguf
+llama_model_load_from_file_impl: failed to load model
+[💥 FATAL] Failed to load model: /home/dev/workspace/AgenticDSL/build/./models/gongjy/MiniMind2-gguf/Q4-MiniMind2-Small.gguf

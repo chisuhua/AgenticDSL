@@ -1,0 +1,5 @@
+test_scheduler build failed:
+/home/dev/workspace/AgenticDSL/tests/test_scheduler.cpp:3:10: fatal error: agenticdsl/core/engine.h: No such file or directory
+    3 | #include "agenticdsl/core/engine.h"
+          ^~~~~~~~~~~~~~~~~~~~~~~~~~
+compilation terminated.

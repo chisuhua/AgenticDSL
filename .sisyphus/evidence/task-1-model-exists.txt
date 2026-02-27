@@ -1,0 +1,1 @@
+-rw-rw-r-- 1 dev dev 17506368 Feb 26 15:39 /home/dev/workspace/AgenticDSL/models/gongjy/MiniMind2-gguf/Q4-MiniMind2-Small.gguf
