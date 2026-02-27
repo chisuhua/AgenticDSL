@@ -1,11 +1,6 @@
 // tests/test_scheduler.cpp
 #include "catch_amalgamated.hpp"
-#include "agenticdsl/core/engine.h"
-#include "agenticdsl/core/parser.h"
-#include "agenticdsl/core/executor.h"
-#include "agenticdsl/dsl/templates.h"
-#include "agenticdsl/tools/registry.h"
-#include "common/utils.h"
+#include "core/engine.h"
 #include <iostream>
 #include <string>
 
@@ -161,7 +156,7 @@ assign:
   test: "value"
 next: "/__system__/budget_exceeded"
 # --- END AgenticDSL ---
-```yaml
+```
 )";
 
     auto ctx = run_dsl(markdown);
@@ -205,4 +200,76 @@ termination_mode: hard
     auto ctx = run_dsl(markdown);
     REQUIRE(ctx["before"] == "start");
     REQUIRE(ctx["after"] == "continued");
+}
+
+// Test 6: Cross-graph execution - node in /side branch connects to /main branch
+// This test FAILS due to bug in topo_scheduler.cpp:594 - successors filtered by branch path prefix
+TEST_CASE("Cross-Graph Edge Execution", "[scheduler][cross-graph][bug]") {
+    std::string markdown = R"(
+### AgenticDSL `/main`
+```yaml
+# --- BEGIN AgenticDSL ---
+graph_type: subgraph
+entry: start
+nodes:
+  - id: start
+    type: start
+    next: [/side/work]
+  - id: continue
+    type: assign
+    assign:
+      main_continued: "yes"
+      combined: "{{ started }}_{{ side_done }}"
+    next: [/main/end]
+  - id: end
+    type: end
+    termination_mode: hard
+# --- END AgenticDSL ---
+```
+
+### AgenticDSL `/main/start`
+```yaml
+# --- BEGIN AgenticDSL ---
+type: assign
+assign:
+  started: "yes"
+next: "/side/work"
+# --- END AgenticDSL ---
+```
+
+### AgenticDSL `/side/work`
+```yaml
+# --- BEGIN AgenticDSL ---
+type: assign
+assign:
+  side_done: "yes"
+next: "/main/continue"
+# --- END AgenticDSL ---
+```
+
+### AgenticDSL `/main/continue`
+```yaml
+# --- BEGIN AgenticDSL ---
+type: assign
+assign:
+  main_continued: "yes"
+  combined: "{{ started }}_{{ side_done }}"
+next: "/main/end"
+# --- END AgenticDSL ---
+```
+
+### AgenticDSL `/main/end`
+```yaml
+# --- BEGIN AgenticDSL ---
+type: end
+termination_mode: hard
+# --- END AgenticDSL ---
+```
+)";
+
+    auto ctx = run_dsl(markdown);
+    REQUIRE(ctx["started"] == "yes");
+    REQUIRE(ctx["side_done"] == "yes");
+    REQUIRE(ctx["main_continued"] == "yes");
+    REQUIRE(ctx["combined"] == "yes_yes");
 }
