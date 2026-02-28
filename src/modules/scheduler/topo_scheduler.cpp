@@ -591,7 +591,7 @@ Context TopoScheduler::execute_single_branch(const NodePath& branch_path, const 
         // Update successors' in-degrees and add to branch queue if ready
         for (const auto& next_path : node->next) {
             // Only update if the successor is also part of the same branch
-            if (node_map_.count(next_path) > 0 && (next_path.rfind(branch_path + "/", 0) == 0 || next_path == branch_path)) {
+            if (node_map_.count(next_path) > 0) {
                  if (--branch_in_degree[next_path] == 0) {
                      branch_ready_queue.push(next_path);
                  }
