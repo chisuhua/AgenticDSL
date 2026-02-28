@@ -144,8 +144,15 @@ ExecutionResult TopoScheduler::execute(Context initial_context) {
     std::optional<NodePath> entry_point;
     if (full_graphs_) {
         for (const auto& graph : *full_graphs_) {
+            // Check /__meta__ for entry_point
             if (graph.path == "/__meta__" && graph.metadata.contains("entry_point")) {
                 entry_point = graph.metadata["entry_point"].get<std::string>();
+                break;
+            }
+            // Also check /main for entry (v3.x format)
+            if (graph.path == "/main" && graph.metadata.contains("entry")) {
+                // entry is node ID, need to prepend graph path
+                entry_point = graph.path + "/" + graph.metadata["entry"].get<std::string>();
                 break;
             }
         }
@@ -413,9 +420,11 @@ ExecutionResult TopoScheduler::execute(Context initial_context) {
         return {false, "Execution stopped: Budget exceeded", context, std::nullopt};
     }
 
-    // Final check for unexecuted nodes
+    // Final check for unexecuted nodes (exclude system nodes)
     std::unordered_set<NodePath> all_node_paths;
     for (const auto& n : all_nodes_) {
+        // Skip system nodes from unexecuted check
+        if (n->path.rfind("/__system__/", 0) == 0) continue;
         all_node_paths.insert(n->path);
     }
     std::set<NodePath> unexecuted;
