@@ -93,6 +93,10 @@ std::vector<ParsedGraph> MarkdownParser::parse_from_string(const std::string& ma
                 ParsedGraph graph;
                 graph.path = path;
                 graph.metadata = json_doc.value("metadata", nlohmann::json::object());
+                // Also extract entry from root level if present
+                if (json_doc.contains("entry")) {
+                    graph.metadata["entry"] = json_doc["entry"];
+                }
 
                 if (json_doc.contains("signature")) {
                     graph.signature = json_doc["signature"].get<std::string>();

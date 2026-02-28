@@ -1,6 +1,6 @@
 // tests/test_library_loader.cpp
 #include "catch_amalgamated.hpp"
-#include "agenticdsl/library/loader.h"
+#include "modules/library/library_loader.h"
 
 TEST_CASE("StandardLibraryLoader loads builtin noop", "[library][stage3]") {
     auto& loader = agenticdsl::StandardLibraryLoader::instance();

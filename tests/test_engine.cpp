@@ -1,6 +1,6 @@
 // tests/test_engine_dynamic_dsl.cpp
 #include "catch_amalgamated.hpp"
-#include "agenticdsl/core/engine.h"
+#include "core/engine.h"
 
 TEST_CASE("Engine appends and executes generated DSL", "[engine][stage3]") {
     std::string initial = R"(
