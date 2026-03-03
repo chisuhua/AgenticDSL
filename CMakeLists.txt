@@ -92,7 +92,11 @@ target_link_libraries(agent_basic
     agenticdsl_core
 )
 
+# Create alias for tests
+add_library(agenticdsl ALIAS agenticdsl_core)
+
 # --- Tests (Optional) ---
 if(AGENTICDSL_BUILD_TESTS)
+    enable_testing()
     add_subdirectory(tests)
 endif()

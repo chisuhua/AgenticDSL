@@ -36,9 +36,8 @@ static LlamaAdapter::Config load_llm_config(const std::string& config_path = "ll
         if (j.contains("model_path") && j["model_path"].is_string()) {
             std::string model_rel = j["model_path"].get<std::string>();
             // Resolve relative to config file's directory (or current dir)
-            fs::path config_dir = fs::path(config_path).parent_path();
-            if (config_dir.empty()) config_dir = ".";
-            fs::path abs_model_path = fs::absolute(config_dir / model_rel);
+            fs::path config_dir = fs::weakly_canonical(fs::absolute(config_path)).parent_path();
+fs::path abs_model_path = fs::absolute(config_dir / model_rel);
             config.model_path = abs_model_path.string();
         }
 

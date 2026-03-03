@@ -1,25 +1,15 @@
 // tests/test_no_llm.cpp
 #include "catch_amalgamated.hpp"
-#include "agenticdsl/core/engine.h"
-#include "agenticdsl/tools/registry.h"
-#include "common/utils.h"
+#include "core/engine.h"
+#include "common/tools/registry.h"
+#include "common/utils/parser_utils.h"
 #include <string>
 #include <iostream>
 
 using namespace agenticdsl;
 
-// Register mock tools before tests
-static struct ToolRegistrar {
-    ToolRegistrar() {
-        ToolRegistry::instance().register_tool("calculate", [](const std::unordered_map<std::string, std::string>& args) -> nlohmann::json {
-            double a = std::stod(args.at("a"));
-            double b = std::stod(args.at("b"));
-            std::string op = args.at("op");
-            double result = (op == "+") ? a + b : a - b;
-            return nlohmann::json{{"result", result}};
-        });
-    }
-} registrar;
+// ToolRegistrar is removed - ToolRegistry is no longer a singleton.
+// Tools should be registered via DSLEngine::register_tool() instead.
 
 TEST_CASE("Execute Assign + ToolCall Workflow", "[engine][executor]") {
     std::string markdown = R"(
@@ -53,6 +43,16 @@ nodes:
 )";
 
     auto engine = DSLEngine::from_markdown(markdown);
+    
+    // Register the calculate tool on this engine
+    engine->register_tool("calculate", [](const std::unordered_map<std::string, std::string>& args) -> nlohmann::json {
+        double a = std::stod(args.at("a"));
+        double b = std::stod(args.at("b"));
+        std::string op = args.at("op");
+        double result = (op == "+") ? a + b : a - b;
+        return nlohmann::json{{"result", result}};
+    });
+    
     Context ctx;
     auto result = engine->run(ctx);
 

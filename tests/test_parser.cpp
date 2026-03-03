@@ -1,8 +1,9 @@
 // tests/test_parser.cpp
 #include "catch_amalgamated.hpp"
-#include "agenticdsl/core/parser.h"
-#include "agenticdsl/core/nodes.h"
-#include "common/utils.h"  // ← 注意路径
+#include "modules/parser/markdown_parser.h"
+#include "core/types/node.h"
+#include "common/utils/parser_utils.h"
+#include "common/utils/yaml_json.h"
 #include <string>
 #include <iostream>
 #include <yaml-cpp/yaml.h>           // ← 新增

@@ -1,11 +1,11 @@
 // tests/test_basic.cpp
 #include "catch_amalgamated.hpp"
 #include "core/engine.h"
-#include "agenticdsl/core/parser.h"
-#include "agenticdsl/core/executor.h"
-#include "agenticdsl/dsl/templates.h"
-#include "agenticdsl/tools/registry.h"
-#include "common/utils.h"
+#include "modules/parser/markdown_parser.h"
+#include "modules/executor/node_executor.h"
+#include "common/utils/template_renderer.h"
+#include "common/tools/registry.h"
+#include "common/utils/parser_utils.h"
 #include <iostream>
 #include <string>
 
