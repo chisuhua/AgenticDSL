@@ -1,11 +1,12 @@
 #include "common/tools/registry.h"
+
 #include <stdexcept>
 #include <limits>
 
 namespace agenticdsl {
 
 ToolRegistry::ToolRegistry() {
-    register_default_tools(); // ← 构造时注册默认工具
+    register_default_tools();
 }
 
 void ToolRegistry::register_default_tools() {
@@ -58,7 +59,7 @@ void ToolRegistry::register_default_tools() {
 }
 
 bool ToolRegistry::has_tool(const std::string& name) const {
-    return tools_.count(name) > 0;
+    return tools_.count(name) > 0 || llm_tools_.count(name) > 0;
 }
 
 nlohmann::json ToolRegistry::call_tool(const std::string& name, const std::unordered_map<std::string, std::string>& args) {
@@ -76,11 +77,62 @@ nlohmann::json ToolRegistry::call_tool(const std::string& name, const std::unord
 
 std::vector<std::string> ToolRegistry::list_tools() const {
     std::vector<std::string> names;
-    names.reserve(tools_.size());
+    names.reserve(tools_.size() + llm_tools_.size());
     for (const auto& [name, _] : tools_) {
         names.push_back(name);
     }
+    for (const auto& [name, _] : llm_tools_) {
+        names.push_back(name);
+    }
     return names;
+}
+
+void ToolRegistry::register_llm_tool(std::string name, std::unique_ptr<ILLMTool> tool, const LLMParams& default_params) {
+    llm_tools_[std::move(name)] = LLMToolEntry{std::move(tool), default_params};
+}
+
+bool ToolRegistry::is_llm_tool(const std::string& name) const {
+    return llm_tools_.count(name) > 0;
+}
+
+const LLMParams& ToolRegistry::get_llm_params(const std::string& name) const {
+    auto it = llm_tools_.find(name);
+    if (it == llm_tools_.end()) {
+        throw std::runtime_error("Not an LLM tool: " + name);
+    }
+    return it->second.default_params;
+}
+
+nlohmann::json ToolRegistry::call_llm_tool(const std::string& name, const std::string& prompt, const LLMParams& params) {
+    auto it = llm_tools_.find(name);
+    if (it == llm_tools_.end()) {
+        return nlohmann::json{{"error", "LLM tool not found: " + name}};
+    }
+
+    try {
+        // Merge default params with provided params
+        LLMParams merged_params = it->second.default_params;
+        if (params.temperature != 0.7f) merged_params.temperature = params.temperature;
+        if (params.max_tokens != 512) merged_params.max_tokens = params.max_tokens;
+        if (params.top_p != 0.95f) merged_params.top_p = params.top_p;
+        if (params.n_ctx != 2048) merged_params.n_ctx = params.n_ctx;
+        if (params.n_threads != 4) merged_params.n_threads = params.n_threads;
+        if (!params.model.empty()) merged_params.model = params.model;
+
+        auto result = it->second.tool->generate(prompt, merged_params);
+
+        nlohmann::json json_result;
+        json_result["success"] = result.success;
+        if (result.success) {
+            json_result["text"] = result.text;
+            json_result["tokens_generated"] = result.tokens_generated;
+        } else {
+            json_result["error"] = result.error;
+        }
+        return json_result;
+    } catch (const std::exception& e) {
+        return nlohmann::json{{"error", std::string("LLM tool execution failed: ") + e.what()}};
+    }
 }
 
 } // namespace agenticdsl

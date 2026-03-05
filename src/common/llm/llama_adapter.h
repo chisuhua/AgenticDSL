@@ -38,7 +38,6 @@ private:
     std::string detokenize(llama_token token);
 };
 
-extern LlamaAdapter* g_current_llm_adapter; // ← 临时全局指针
 } // namespace agenticdsl
 
 #endif
