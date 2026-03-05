@@ -34,8 +34,8 @@ Context NodeExecutor::execute_node(Node* node, const Context& ctx) {
             return execute_end(dynamic_cast<const EndNode*>(node), context_with_resources);
         case NodeType::ASSIGN:
             return execute_assign(dynamic_cast<const AssignNode*>(node), context_with_resources);
-        case NodeType::LLM_CALL:
-            return execute_llm_call(dynamic_cast<const LLMCallNode*>(node), context_with_resources);
+        case NodeType::DSL_CALL:
+            return execute_dsl_node(dynamic_cast<const DSLNode*>(node), context_with_resources);
         case NodeType::TOOL_CALL:
             return execute_tool_call(dynamic_cast<const ToolCallNode*>(node), context_with_resources);
         case NodeType::RESOURCE:
@@ -116,6 +116,34 @@ Context NodeExecutor::execute_llm_call(const LLMCallNode* node, const Context& c
     } catch (const inja::RenderError& e) {
         throw std::runtime_error("Prompt template rendering failed for node '" + node->path + "': " + std::string(e.what()));
     }
+    return new_context;
+}
+Context NodeExecutor::execute_dsl_node(const DSLNode* node, const Context& ctx) {
+    Context new_context = ctx;
+    
+    try {
+        // Render prompt template
+        std::string rendered_prompt = InjaTemplateRenderer::render(node->prompt_template, ctx);
+        
+        // Call LLM via ToolRegistry
+        nlohmann::json result = tool_registry_.call_llm_tool(node->llm_tool_name, rendered_prompt, node->llm_params);
+        
+        // Check result
+        if (!result.value("success", false)) {
+            throw std::runtime_error("LLM generation failed: " + result.value("error", "Unknown error"));
+        }
+        
+        // Assign output to context
+        if (!node->output_keys.empty()) {
+            new_context[node->output_keys[0]] = result["text"].get<std::string>();
+        } else {
+            throw std::runtime_error("DSLNode has no output_keys: " + node->path);
+        }
+        
+    } catch (const inja::RenderError& e) {
+        throw std::runtime_error("Prompt template rendering failed for node '" + node->path + "': " + std::string(e.what()));
+    }
+    
     return new_context;
 }
 

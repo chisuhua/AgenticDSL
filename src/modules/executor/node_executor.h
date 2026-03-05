@@ -43,6 +43,7 @@ private:
     Context execute_end(const EndNode* node, const Context& ctx);
     Context execute_assign(const AssignNode* node, const Context& ctx);
     Context execute_llm_call(const LLMCallNode* node, const Context& ctx);
+    Context execute_dsl_node(const DSLNode* node, const Context& ctx);
     Context execute_tool_call(const ToolCallNode* node, const Context& ctx);
     Context execute_resource(const ResourceNode* node, const Context& ctx);
     Context execute_generate_subgraph(const GenerateSubgraphNode* node, const Context& ctx);

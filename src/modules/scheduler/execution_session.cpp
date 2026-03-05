@@ -96,7 +96,7 @@ ExecutionSession::ExecutionResult ExecutionSession::execute_node(Node* node, con
     }
 
     // 1. 检查预算
-    if (node->type == NodeType::LLM_CALL) {
+    if (node->type == NodeType::DSL_CALL) {
         if (!budget_controller_.try_consume_llm_call()) {
             result.success = false;
             result.message = "Budget exceeded: LLM call limit reached";
@@ -153,7 +153,7 @@ ExecutionSession::ExecutionResult ExecutionSession::execute_node(Node* node, con
         // */
 
         // --- v3.1: Check for LLM Call Pause ---
-        if (node->type == NodeType::LLM_CALL) {
+        if (node->type == NodeType::DSL_CALL) {
              result.paused_at = node->path;
              // For this synchronous executor, we just return here.
              // An async executor would handle pausing differently.

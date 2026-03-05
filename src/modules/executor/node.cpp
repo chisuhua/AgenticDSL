@@ -74,7 +74,7 @@ LLMCallNode::LLMCallNode(NodePath path,
                          std::string prompt,
                          std::vector<std::string> output_keys,
                          std::vector<NodePath> next_paths)
-    : Node(std::move(path), NodeType::LLM_CALL, std::move(next_paths)),
+    : Node(std::move(path), NodeType::DSL_CALL, std::move(next_paths)),
       prompt_template(std::move(prompt)),
       output_keys(std::move(output_keys)) {}
 
@@ -91,6 +91,33 @@ std::unique_ptr<Node> LLMCallNode::clone() const {
 }
 
 // ————————————————————————
+// DSLNode (v3.10 - replaces LLMCallNode)
+// ————————————————————————
+
+DSLNode::DSLNode(NodePath path,
+                 std::string prompt,
+                 std::string llm_tool,
+                 LLMParams params,
+                 std::vector<std::string> output_keys,
+                 std::vector<NodePath> next_paths)
+    : Node(std::move(path), NodeType::DSL_CALL, std::move(next_paths)),
+      prompt_template(std::move(prompt)),
+      llm_tool_name(std::move(llm_tool)),
+      llm_params(std::move(params)),
+      output_keys(std::move(output_keys)) {}
+
+Context DSLNode::execute(Context& context) {
+    return context; // 实际逻辑在 NodeExecutor
+}
+
+std::unique_ptr<Node> DSLNode::clone() const {
+    auto node = std::make_unique<DSLNode>(path, prompt_template, llm_tool_name, llm_params, output_keys, next);
+    node->metadata = metadata;
+    node->signature = signature;
+    node->permissions = permissions;
+    return node;
+}
+
 // ToolCallNode
 // ————————————————————————
 
