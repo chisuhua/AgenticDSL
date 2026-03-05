@@ -1,9 +1,9 @@
 #ifndef AGENTICDSL_COMMON_TYPES_NODE_H
 #define AGENTICDSL_COMMON_TYPES_NODE_H
 
-#include "context.h" // 引入 Context/Value
-#include "budget.h" // 引入 ResourceType
 #include "resource.h" // 引入 ResourceType
+#include "common/llm/llm_tool.h" // 引入 LLMParams
+#include "budget.h" // 引入 ExecutionBudget
 #include <string>
 #include <vector>
 #include <memory>
@@ -21,7 +21,7 @@ enum class NodeType : uint8_t {
     START,
     END,
     ASSIGN,
-    LLM_CALL,
+    DSL_CALL,  // Changed from LLM_CALL (v3.10)
     TOOL_CALL,
     RESOURCE,
     FORK,
@@ -104,7 +104,25 @@ struct AssignNode : public Node {
     std::unique_ptr<Node> clone() const override;
 };
 
-// LLM Call Node
+// DSL Node (for LLM-generated DSL, v3.10 - replaces LLMCallNode)
+struct DSLNode : public Node {
+    std::string prompt_template;
+    std::string llm_tool_name;  // e.g., "llama-7b", "gpt-4"
+    LLMParams llm_params;       // Generation parameters
+    std::vector<std::string> output_keys;
+
+    DSLNode(NodePath path,
+            std::string prompt,
+            std::string llm_tool_name,
+            LLMParams llm_params = {},
+            std::vector<std::string> output_keys = {},
+            std::vector<NodePath> next_paths = {});
+    [[nodiscard]] Context execute(Context& context) override;
+    std::unique_ptr<Node> clone() const override;
+};
+
+// LLM Call Node (deprecated - use DSLNode instead, v3.10)
+[[deprecated("Use DSLNode instead")]]
 struct LLMCallNode : public Node {
     std::string prompt_template;
     std::vector<std::string> output_keys;
