@@ -6,7 +6,7 @@
 #include "common/utils/yaml_json.h"
 #include <string>
 #include <iostream>
-#include <yaml-cpp/yaml.h>           // ← 新增
+#include <yaml-cpp/yaml.h>
 
 using namespace agenticdsl;
 
@@ -68,8 +68,8 @@ scope: global
     REQUIRE_FALSE(blocks[2].second.empty());
 }
 
-// Test 2: Parse single llm_call node
-TEST_CASE("Parse LLMCallNode", "[parser]") {
+// Test 2: Parse single llm_call node (backward compatibility - creates DSLNode)
+TEST_CASE("Parse LLMCallNode (backward compat)", "[parser]") {
     std::string yaml = R"(
 type: llm_call
 prompt_template: "Summarize: {{ input }}"
@@ -78,24 +78,91 @@ next: "/main/end"
 metadata:
   description: "Summarization step"
 )";
-    auto json_doc = parse_yaml_str(yaml);  // ← 修改点
+    auto json_doc = parse_yaml_str(yaml);
     MarkdownParser parser;
     auto node = parser.create_node_from_json("/main/summarize", json_doc);
 
     REQUIRE(node != nullptr);
-    REQUIRE(node->type == NodeType::LLM_CALL);
+    REQUIRE(node->type == NodeType::DSL_CALL);
     REQUIRE(node->path == "/main/summarize");
     REQUIRE(node->next.size() == 1);
     REQUIRE(node->next[0] == "/main/end");
     REQUIRE(node->metadata["description"] == "Summarization step");
 
-    auto* llm_node = dynamic_cast<LLMCallNode*>(node.get());
-    REQUIRE(llm_node != nullptr);
-    REQUIRE(llm_node->prompt_template == "Summarize: {{ input }}");
-    REQUIRE(llm_node->output_keys == std::vector<std::string>{"summary"});
+    // Cast to DSLNode (llm_call creates DSLNode with default llm_tool_name)
+    auto* dsl_node = dynamic_cast<DSLNode*>(node.get());
+    REQUIRE(dsl_node != nullptr);
+    REQUIRE(dsl_node->prompt_template == "Summarize: {{ input }}");
+    REQUIRE(dsl_node->output_keys == std::vector<std::string>{"summary"});
+    REQUIRE(dsl_node->llm_tool_name == "llama-default"); // Default from backward compat
 }
 
-// Test 3: Parse tool_call with arguments and array output_keys
+// Test 3: Parse dsl_call node type with all fields
+TEST_CASE("Parse DSLNode dsl_call type", "[parser]") {
+    std::string yaml = R"(
+type: dsl_call
+prompt_template: "Generate response: {{ input }}"
+llm_tool_name: "llama-7b"
+llm_params:
+  temperature: 0.5
+  max_tokens: 256
+  top_p: 0.9
+  n_ctx: 4096
+  n_threads: 8
+  model: "llama-2-7b"
+output_keys: "response"
+next: "/main/end"
+metadata:
+  description: "LLM generation step"
+)";
+    auto json_doc = parse_yaml_str(yaml);
+    MarkdownParser parser;
+    auto node = parser.create_node_from_json("/main/generate", json_doc);
+
+    REQUIRE(node != nullptr);
+    REQUIRE(node->type == NodeType::DSL_CALL);
+    REQUIRE(node->path == "/main/generate");
+    REQUIRE(node->next.size() == 1);
+    REQUIRE(node->next[0] == "/main/end");
+    REQUIRE(node->metadata["description"] == "LLM generation step");
+
+    auto* dsl_node = dynamic_cast<DSLNode*>(node.get());
+    REQUIRE(dsl_node != nullptr);
+    REQUIRE(dsl_node->prompt_template == "Generate response: {{ input }}");
+    REQUIRE(dsl_node->llm_tool_name == "llama-7b");
+    REQUIRE(dsl_node->output_keys == std::vector<std::string>{"response"});
+    
+    // Verify LLM params
+    REQUIRE(dsl_node->llm_params.temperature == 0.5f);
+    REQUIRE(dsl_node->llm_params.max_tokens == 256);
+    REQUIRE(dsl_node->llm_params.top_p == 0.9f);
+    REQUIRE(dsl_node->llm_params.n_ctx == 4096);
+    REQUIRE(dsl_node->llm_params.n_threads == 8);
+    REQUIRE(dsl_node->llm_params.model == "llama-2-7b");
+}
+
+// Test 4: Parse dsl_call with minimal params
+TEST_CASE("Parse DSLNode minimal params", "[parser]") {
+    std::string yaml = R"(
+type: dsl_call
+prompt_template: "Simple prompt"
+llm_tool_name: "gpt-4"
+output_keys: "result"
+)";
+    auto json_doc = parse_yaml_str(yaml);
+    MarkdownParser parser;
+    auto node = parser.create_node_from_json("/main/simple", json_doc);
+
+    auto* dsl_node = dynamic_cast<DSLNode*>(node.get());
+    REQUIRE(dsl_node != nullptr);
+    REQUIRE(dsl_node->llm_tool_name == "gpt-4");
+    
+    // Default LLM params
+    REQUIRE(dsl_node->llm_params.temperature == 0.7f); // Default
+    REQUIRE(dsl_node->llm_params.max_tokens == 512);    // Default
+}
+
+// Test 5: Parse tool_call with arguments and array output_keys
 TEST_CASE("Parse ToolCallNode", "[parser]") {
     std::string yaml = R"(
 type: tool_call
@@ -106,7 +173,7 @@ arguments:
 output_keys: ["status", "body"]
 next: ["/main/process"]
 )";
-    auto json_doc = parse_yaml_str(yaml);  // ← 修改点
+    auto json_doc = parse_yaml_str(yaml);
     MarkdownParser parser;
     auto node = parser.create_node_from_json("/main/fetch", json_doc);
 
@@ -122,7 +189,7 @@ next: ["/main/process"]
     REQUIRE(tool_node->next[0] == "/main/process");
 }
 
-// Test 4: Parse resource node
+// Test 6: Parse resource node
 TEST_CASE("Parse ResourceNode", "[parser]") {
     std::string yaml = R"(
 type: resource
@@ -132,7 +199,7 @@ scope: global
 metadata:
   tags: ["cache", "temp"]
 )";
-    auto json_doc = parse_yaml_str(yaml);  // ← 修改点
+    auto json_doc = parse_yaml_str(yaml);
     MarkdownParser parser;
     auto node = parser.create_node_from_json("/resources/cache", json_doc);
 
@@ -147,7 +214,7 @@ metadata:
     REQUIRE(res_node->scope == "global");
 }
 
-// Test 5: Parse subgraph (/main)
+// Test 7: Parse subgraph (/main)
 TEST_CASE("Parse Subgraph", "[parser]") {
     std::string markdown = R"(
 ### AgenticDSL `/main`
@@ -181,11 +248,11 @@ nodes:
     REQUIRE(graph.nodes[0]->type == NodeType::START);
     REQUIRE(graph.nodes[0]->path == "/main/start");
 
-    REQUIRE(graph.nodes[1]->type == NodeType::LLM_CALL);
+    REQUIRE(graph.nodes[1]->type == NodeType::DSL_CALL);
     REQUIRE(graph.nodes[1]->path == "/main/ask");
 }
 
-// Test 6: output_keys as string vs array
+// Test 8: output_keys as string vs array
 TEST_CASE("OutputKeys Parsing", "[parser]") {
     MarkdownParser parser;
 
@@ -196,8 +263,8 @@ type: llm_call
 prompt_template: "Test"
 output_keys: "result"
 )";
-        auto node1 = parser.create_node_from_json("/test1", parse_yaml_str(yaml1));  // ← 修改点
-        auto* llm1 = dynamic_cast<LLMCallNode*>(node1.get());
+        auto node1 = parser.create_node_from_json("/test1", parse_yaml_str(yaml1));
+        auto* llm1 = dynamic_cast<DSLNode*>(node1.get());
         REQUIRE(llm1->output_keys == std::vector<std::string>{"result"});
     }
 
@@ -209,13 +276,13 @@ tool: mock_tool
 output_keys: ["a", "b"]
 arguments: {}
 )";
-        auto node2 = parser.create_node_from_json("/test2", parse_yaml_str(yaml2));  // ← 修改点
+        auto node2 = parser.create_node_from_json("/test2", parse_yaml_str(yaml2));
         auto* tool2 = dynamic_cast<ToolCallNode*>(node2.get());
         REQUIRE(tool2->output_keys == std::vector<std::string>{"a", "b"});
     }
 }
 
-// Test 7: Invalid path format
+// Test 9: Invalid path format
 TEST_CASE("Invalid Path Format", "[parser]") {
     std::string markdown = R"(
 ### AgenticDSL `invalid_path`
@@ -235,7 +302,7 @@ assign:
     );
 }
 
-// Test 8: Missing required field (e.g., output_keys)
+// Test 10: Missing required field (e.g., output_keys)
 TEST_CASE("Missing Required Field", "[parser]") {
     std::string yaml = R"(
 type: llm_call
@@ -244,11 +311,12 @@ prompt_template: "Test"
 )";
     MarkdownParser parser;
     REQUIRE_THROWS_WITH(
-        parser.create_node_from_json("/bad", parse_yaml_str(yaml)),  // ← 修改点
+        parser.create_node_from_json("/bad", parse_yaml_str(yaml)),
         Catch::Matchers::ContainsSubstring("Missing 'output_keys'")
     );
 }
 
+// Test 11: Parse signature and permissions from subgraph
 TEST_CASE("Parse signature and permissions from subgraph", "[parser][stage3]") {
     std::string markdown = R"(
 ### AgenticDSL `/lib/math/add`
@@ -277,6 +345,7 @@ nodes:
     REQUIRE(g.is_standard_library == true);
 }
 
+// Test 12: Parse signature and permissions from single node
 TEST_CASE("Parse signature and permissions from single node", "[parser][stage3]") {
     std::string markdown = R"(
 ### AgenticDSL `/main/tool`
@@ -299,4 +368,3 @@ next: ["/main/end"]
     REQUIRE(node->signature == "(query: string) -> results");
     REQUIRE(node->permissions == std::vector<std::string>{"network"});
 }
-

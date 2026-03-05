@@ -242,10 +242,40 @@ std::unique_ptr<Node> MarkdownParser::create_node_from_json(const NodePath& path
         node->signature = signature;
         node->permissions = permissions;
         return node;
+    } else if (type_str == "dsl_call") {
+        std::string prompt = node_json.at("prompt_template").get<std::string>();
+        std::string llm_tool_name = node_json.at("llm_tool_name").get<std::string>();
+        auto output_keys = parse_output_keys(node_json, path);
+        
+        // Parse LLMParams (optional, with defaults)
+        LLMParams llm_params;
+        if (node_json.contains("llm_params") && node_json["llm_params"].is_object()) {
+            const auto& params = node_json["llm_params"];
+            if (params.contains("temperature")) llm_params.temperature = params["temperature"].get<float>();
+            if (params.contains("max_tokens")) llm_params.max_tokens = params["max_tokens"].get<int>();
+            if (params.contains("top_p")) llm_params.top_p = params["top_p"].get<float>();
+            if (params.contains("n_ctx")) llm_params.n_ctx = params["n_ctx"].get<int>();
+            if (params.contains("n_threads")) llm_params.n_threads = params["n_threads"].get<int>();
+            if (params.contains("model")) llm_params.model = params["model"].get<std::string>();
+        }
+        
+        auto node = std::make_unique<DSLNode>(path, std::move(prompt), std::move(llm_tool_name), 
+                                              std::move(llm_params), std::move(output_keys), std::move(next_paths));
+        node->metadata = metadata;
+        node->signature = signature;
+        node->permissions = permissions;
+        return node;
     } else if (type_str == "llm_call") {
+        // Backward compatibility - create DSLNode with default llm_tool_name
         std::string prompt = node_json.at("prompt_template").get<std::string>();
         auto output_keys = parse_output_keys(node_json, path);
-        auto node = std::make_unique<LLMCallNode>(path, std::move(prompt), std::move(output_keys), std::move(next_paths));
+        
+        // Default LLM tool name for backward compatibility
+        std::string llm_tool_name = "llama-default";
+        LLMParams llm_params;
+        
+        auto node = std::make_unique<DSLNode>(path, std::move(prompt), std::move(llm_tool_name), 
+                                              std::move(llm_params), std::move(output_keys), std::move(next_paths));
         node->metadata = metadata;
         node->signature = signature;
         node->permissions = permissions;
