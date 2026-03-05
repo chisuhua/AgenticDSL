@@ -47,6 +47,9 @@ link_directories(${CMAKE_BINARY_DIR}/bin)
 
 add_library(agenticdsl_common STATIC
     src/common/llm/llama_adapter.cpp
+    src/common/llm/llama_tool.cpp
+    src/common/tools/registry.cpp
+    src/common/llm/llama_adapter.cpp
     src/common/tools/registry.cpp
     src/common/utils/parser_utils.cpp
     src/common/utils/template_renderer.cpp
@@ -82,6 +85,9 @@ target_link_libraries(agenticdsl_core
     agenticdsl_modules_system
     Threads::Threads
 )
+
+# Alias target for tests
+add_library(agenticdsl ALIAS agenticdsl_core)
 
 # --- Sample: agent_basic ---
 add_executable(agent_basic
