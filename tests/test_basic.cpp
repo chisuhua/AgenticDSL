@@ -2,10 +2,23 @@
 #include "catch_amalgamated.hpp"
 #include "core/engine.h"
 #include "modules/parser/markdown_parser.h"
+<<<<<<< HEAD
 #include "modules/executor/node_executor.h"
 #include "common/utils/template_renderer.h"
 #include "common/tools/registry.h"
 #include "common/utils/parser_utils.h"
+=======
+#include "common/tools/registry.h"
+#include "common/utils/template_renderer.h"
+#include "common/utils/parser_utils.h"
+#include <iostream>
+#include <string>
+#include "catch_amalgamated.hpp"
+#include "core/engine.h"
+#include "modules/parser/markdown_parser.h"
+#include "common/tools/registry.h"
+#include "common/utils/template_renderer.h"
+>>>>>>> de9e7f9 (feat(engine): Add register_llm_tool() method for dependency injection)
 #include <iostream>
 #include <string>
 
@@ -127,15 +140,7 @@ nodes:
     REQUIRE_FALSE(result.final_context["search_results"].is_null());
 }
 
-// Test 5: DSL Path Validation
-//TEST_CASE("DSL Path Validation", "[spec][utils]") {
-//    REQUIRE(agenticdsl::DSLValidator::validate_path("/valid/path/to/node"));
-//    REQUIRE_FALSE(agenticdsl::DSLValidator::validate_path("invalid_path_no_slash_start"));
-//    REQUIRE(agenticdsl::DSLValidator::validate_path("/valid-node_name"));
-//    REQUIRE_FALSE(agenticdsl::DSLValidator::validate_path("/path with spaces"));
-//}
-
-// Test 6: More complex Inja features (e.g., loops, conditions)
+// Test 5: More complex Inja features (e.g., loops, conditions)
 TEST_CASE("Inja Complex Features", "[templates][renderer]") {
     agenticdsl::Context ctx;
     ctx["items"] = {"item1", "item2", "item3"};

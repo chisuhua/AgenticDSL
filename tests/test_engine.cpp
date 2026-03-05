@@ -1,4 +1,6 @@
-// tests/test_engine_dynamic_dsl.cpp
+// tests/test_engine.cpp
+#include "catch_amalgamated.hpp"
+#include "core/engine.h"
 #include "catch_amalgamated.hpp"
 #include "core/engine.h"
 

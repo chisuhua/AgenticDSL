@@ -26,7 +26,7 @@ function(add_catch_test TEST_NAME)
         ${PROJECT_SOURCE_DIR}/external/yaml-cpp/include
     )
 
-    target_link_libraries(${TEST_NAME} PRIVATE agenticdsl yaml-cpp::yaml-cpp)   # 或你内部构建的 yaml-cpp 目标
+    target_link_libraries(${TEST_NAME} PRIVATE agenticdsl agenticdsl_modules_parser yaml-cpp::yaml-cpp)   # Added parser module
     target_compile_definitions(${TEST_NAME} PRIVATE CATCH_CONFIG_ENABLE_ALL_STRINGMAKERS=1)
 
     # 注册为 CTest 测试

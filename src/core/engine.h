@@ -25,6 +25,10 @@ public:
         tool_registry_.register_tool(std::string(name), std::forward<Func>(func));
     }
 
+    void register_llm_tool(std::string name, std::unique_ptr<ILLMTool> tool, const LLMParams& default_params = {});
+    ToolRegistry& get_tool_registry() { return tool_registry_; }
+    const ToolRegistry& get_tool_registry() const { return tool_registry_; }
+
     std::vector<TraceRecord> get_last_traces() const { return last_traces_; }
 
     LlamaAdapter* get_llm_adapter() { return llama_adapter_.get(); }

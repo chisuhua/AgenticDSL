@@ -135,15 +135,15 @@ ExecutionResult DSLEngine::run(const Context& context) {
     }
     scheduler.build_dag();
 
-    // 执行
-    LlamaAdapter* prev = g_current_llm_adapter;
-    g_current_llm_adapter = llama_adapter_.get();
     auto result = scheduler.execute(context);
-    g_current_llm_adapter = prev;
 
     last_traces_ = scheduler.get_last_traces();
 
     return result;
+}
+
+void DSLEngine::register_llm_tool(std::string name, std::unique_ptr<ILLMTool> tool, const LLMParams& default_params) {
+    tool_registry_.register_llm_tool(std::move(name), std::move(tool), default_params);
 }
 
 void DSLEngine::append_graphs(std::vector<ParsedGraph> new_graphs) {
