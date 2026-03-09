@@ -1,3 +1,103 @@
+# AgenticDSL 示例集（v3.10 参考实现版）
+
+> 本文档使用当前参考执行器 v1.0 支持的 DSL 语法。  
+> 完整子图格式使用 `graph_type: subgraph` + `nodes:` 数组；单节点也可用独立 `### AgenticDSL '/path'` 块定义。
+
+## 12.0 完整可运行示例（推荐格式）
+
+本示例展示参考执行器实际支持的完整 DSL 写法，包含主图、工具调用、断言和 LLM 生成。
+
+#### AgenticDSL `/__meta__`
+```yaml
+# --- BEGIN AgenticDSL ---
+version: "3.10"
+mode: dev
+entry_point: "/main/start"
+execution_budget:
+  max_nodes: 20
+  max_subgraph_depth: 2
+  max_duration_sec: 60
+# --- END AgenticDSL ---
+```
+
+#### AgenticDSL `/main`
+```yaml
+# --- BEGIN AgenticDSL ---
+graph_type: subgraph
+nodes:
+  - id: start
+    type: start
+    next: ["/main/prepare"]
+
+  - id: prepare
+    type: assign
+    assign:
+      expr: "x^2 + 2x + 1 = 0"
+      user_name: "Alice"
+    next: ["/main/greet"]
+
+  - id: greet
+    type: dsl_call
+    prompt_template: "你好，{{ user_name }}！请帮我分析方程 {{ expr }}"
+    llm_tool_name: "llama-default"
+    llm_params:
+      temperature: 0.5
+      max_tokens: 256
+    output_keys: ["llm_response"]
+    next: ["/main/compute"]
+
+  - id: compute
+    type: tool_call
+    tool: calculate
+    arguments:
+      a: "1"
+      b: "2"
+      op: "+"
+    output_keys: ["sum_result"]
+    next: ["/main/verify"]
+
+  - id: verify
+    type: assert
+    condition: "{{ sum_result.result == 3 }}"
+    on_failure: "/main/error"
+    next: ["/main/end"]
+
+  - id: error
+    type: assign
+    assign:
+      error_msg: "计算结果异常：{{ sum_result }}"
+    next: ["/main/end"]
+
+  - id: end
+    type: end
+    metadata:
+      termination_mode: hard
+# --- END AgenticDSL ---
+```
+
+**对应的 C++ 宿主代码**：
+```cpp
+auto engine = DSLEngine::from_markdown(dsl_content);
+
+// 注册普通工具
+engine->register_tool("calculate",
+    [](const std::unordered_map<std::string, std::string>& args) -> nlohmann::json {
+        double a = std::stod(args.at("a"));
+        double b = std::stod(args.at("b"));
+        return {{"result", a + b}};
+    });
+
+// 注册 LLM 工具（使用 LlamaTool）
+auto llm = std::make_unique<LlamaTool>(LlamaAdapter::Config{
+    .model_path = "/models/llama-2-7b.gguf"
+});
+engine->register_llm_tool("llama-default", std::move(llm));
+
+auto result = engine->run({});
+```
+
+---
+
 
 ## 示例
 
@@ -5,7 +105,7 @@
 
 #### AgenticDSL `/__meta__`
 ```yaml
-version: "3.1"
+version: "3.10"
 mode: dev
 entry_point: "/main/solve_equation"
 execution_budget:
@@ -108,16 +208,22 @@ next: "/lib/memory/vector/store@v1"
 
 #### AgenticDSL `/main/start`
 ```yaml
+# --- BEGIN AgenticDSL ---
 type: assign
 assign:
-  expr: "我想订机票"
-next: "/lib/conversation/start_topic@v1?topic_id=booking"
+  intent: "我想订机票"
+next: "/lib/conversation/start_topic@v1"
+# --- END AgenticDSL ---
+```
 
-AgenticDSL `/topics/booking/main`
+#### AgenticDSL `/topics/booking/main`
+```yaml
+# --- BEGIN AgenticDSL ---
 type: generate_subgraph
 prompt_template: "请询问出发地和目的地..."
-next: "/lib/memory/state/set@v1?key=booking.dest&value={{ $.user_input }}"
-loop_until: "{{ $.booking.confirmed }}"
+output_keys: ["booking_graph_path"]
+next: "/lib/memory/state/set@v1"
+# --- END AgenticDSL ---
 ```
 
 ### 12.5 多角色会议示例
@@ -194,13 +300,14 @@ next: "/end"
 
 #### AgenticDSL `/self/repair`
 ```yaml
-type: codelet_call
-runtime: compat_v35_generate  # 或直接调用 /lib/dslgraph/generate@v1
-arguments:
-  prompt_template: "方程 {{ $.expr }} 求解失败。请重写为标准形式并生成新DAG。"
-  signature_validation: warn
-  on_signature_violation: "/self/fallback"
+# --- BEGIN AgenticDSL ---
+type: generate_subgraph
+prompt_template: "方程 {{ $.expr }} 求解失败。请重写为标准形式并生成新 DAG。"
+output_keys: ["repair_graph_path"]
+signature_validation: warn
+on_signature_violation: "/self/fallback"
 next: "/dynamic/repair_123"
+# --- END AgenticDSL ---
 ```
 
 

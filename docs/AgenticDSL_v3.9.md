@@ -1,4 +1,6 @@
-# AgenticDSL 规范 v3.9+（增强草案）
+# AgenticDSL 规范 v3.10（当前参考实现版）
+
+> **变更说明**：本文档在 v3.9 基础上更新，反映参考执行器 v1.0 的实际实现状态。主要变更：`llm_call` 重命名为 `dsl_call`（v3.10）；`generate_subgraph` 替代 `llm_generate_dsl` 作为用户可见节点类型；`assign` 字段格式确认为键值映射。
 
 **安全 · 可终止 · 可调试 · 可复用 · 可契约 · 可验证**
 
@@ -113,29 +115,39 @@ AgenticDSL支持：
 ## 五、核心叶子节点定义（执行原语层）
 
 ### 5.1 `assign`
-**语义**：安全赋值到上下文（Inja 表达式）
+**语义**：安全赋值到上下文（Inja 模板渲染）
+
+`assign` 字段为**键值对映射**，键为目标上下文字段名，值为 Inja 模板表达式：
 ```yaml
 type: assign
 assign:
-  expr: "coffee"
-  path: "memory.state.preferred_drink"
-meta:
-  ttl_seconds: 600
-  persistence: ephemeral
+  preferred_drink: "coffee"                    # 直接值
+  welcome_msg: "Hello, {{ user.name }}!"       # Inja 模板
+  item_count: "{{ length(items) }}"            # 表达式
+next: "/main/next_step"
+```
+
+多字段并发赋值示例：
+```yaml
+type: assign
+assign:
+  num1: "15"
+  num2: "27"
+next: "/main/compute"
 ```
 
 **字段表**：
 | 字段 | 类型 | 必需 | 说明 |
 |------|------|------|------|
-| assign.expr | string | ✅ | Inja 表达式 |
-| assign.path | string | ✅ | 目标上下文路径 |
-| meta.ttl_seconds | integer | ❌ | 字段存活时间（秒），超时后自动删除 |
-| meta.persistence | string | ❌ | `ephemeral`（默认）或 `durable` |
+| assign | object | ✅ | 键值对映射，键为上下文字段名，值为 Inja 模板字符串 |
+| next | string/list | ❌ | 后继节点路径 |
+
+> ⚠️ **注意**：`assign` 中的每个键直接对应上下文顶层字段（或通过 `parent.child` 嵌套路径表示）。`assign.expr` / `assign.path` 仅是普通键名，不具有特殊含义。
 
 **执行器行为**：
-- 仅 `memory.state.*` 路径支持 TTL；其他路径忽略 `meta`
-- `durable` 字段永不自动清理（用于长期状态）
-- 每次调度前清理已过期字段（不计入 `max_nodes`）
+- 按 Inja 模板渲染后写入上下文，失败则抛出异常
+- 多个键并发写入，若有合并冲突则遵循当前合并策略
+- ⏳ **计划中**（v1.x）：`meta.ttl_seconds` / `meta.persistence` 字段（上下文字段 TTL）当前参考实现不支持
 
 ### 5.2 `tool_call`
 **语义**：调用注册工具（带权限检查）  
@@ -146,6 +158,8 @@ meta:
 **语义**：执行沙箱代码（带安全策略）  
 **关键字段**：`runtime`, `code`, `security`  
 **权限要求**：必须声明 `permissions`（如 `runtime: python3`）
+
+> ⚠️ **实现状态**：`codelet_call` 节点类型在参考执行器 v1.0 中**未实现**，计划在 v1.x 迭代中引入。当前引擎遇到此类型节点会忽略（向前兼容模式）。如需沙箱代码执行能力，请通过 `tool_call` 调用已注册的工具实现。
 
 ### 5.4 `assert`
 **语义**：验证条件，失败则跳转  
@@ -170,83 +184,118 @@ on_failure: "/self/repair"
 - `termination_mode`: `hard`（默认）或 `soft`
 - `output_keys`: 仅合并指定字段到父上下文（`soft` 模式）
 
-### 5.7 `llm_generate_dsl`
-**语义**：委托 LLM 生成结构化子图（仅用于 `/lib/dslgraph/generate@v1` 内部封装）  
-**输出**：必须为 `### AgenticDSL '/dynamic/...'` 块  
+### 5.7 `generate_subgraph`（规范用名：`llm_generate_dsl`）
+**语义**：委托 LLM 生成结构化子图并动态注入调度器  
+**YAML 节点类型字符串**：`generate_subgraph`（参考实现使用此名）  
+**输出**：LLM 必须生成 `### AgenticDSL '/dynamic/...'` 块  
 **权限**：`generate_subgraph: { max_depth: N }`  
 **namespace_prefix** 强制为 `/dynamic/`，禁止 `/lib/` 或 `/main/`
+
+```yaml
+type: generate_subgraph
+prompt_template: "{{ $.expr }} 求解失败。请重写为标准形式并生成新 DAG。"
+output_keys: ["generated_graph_path"]
+signature_validation: warn      # strict | warn | ignore
+on_signature_violation: "/self/fallback"
+next: "/dynamic/repair_123"
+```
 
 **字段表**：
 | 字段 | 类型 | 必需 | 说明 |
 |------|------|------|------|
-| prompt | string | ✅ | 完整提示（已渲染 Inja 模板） |
-| llm | object | ✅ | `model`, `seed`（整数）, `temperature`（≤1.0） |
-| output_constraints | object | ✅ | 见下表 |
-| next | string or list | ✅ | 成功后跳转路径 |
+| prompt_template | string | ✅ | Inja 模板提示词（执行前渲染） |
+| output_keys | string/list | ✅ | 写入上下文的输出字段名 |
+| signature_validation | string | ❌ | `strict`（默认）/ `warn` / `ignore` |
+| on_signature_violation | string | ❌ | 签名校验失败跳转路径 |
+| next | string/list | ❌ | 成功后跳转路径 |
 
-**output_constraints 子字段**：
-| 字段 | 默认值 | 说明 |
-|------|--------|------|
-| must_be_agenticdsl_blocks | true | LLM 输出必须为 `### AgenticDSL '/dynamic/...'` 块 |
-| namespace_prefix | "/dynamic/" | 强制生成路径前缀，禁止 `/lib/` 或 `/main/` |
-| max_blocks | 3 | 最多生成子图数量 |
-| validate_json_schema | true | 对每个 block 内容做 JSON Schema 验证 |
+**执行器行为**：
+- 渲染 `prompt_template` 后通过 LLM 工具生成 DSL 文本
+- 解析生成的 `### AgenticDSL '/dynamic/...'` 块，动态注入调度器
+- 生成的子图通过 `AppendGraphsCallback` 回调注册，后续节点可通过 `next` 或 `wait_for` 引用
 
 **Trace 输出**：
 ```json
 {
-  "llm_generate_dsl": {
-    "prompt_tokens": 120,
-    "completion_tokens": 300,
+  "generate_subgraph": {
     "generated_paths": ["/dynamic/plan_1", "/dynamic/plan_2"],
-    "validation_passed": true
+    "signature_validation": "warn"
   }
 }
 ```
+
+> 📌 规范术语 `llm_generate_dsl` 是内部实现名，用户在 DSL 文件中应始终使用 `generate_subgraph` 作为节点类型字符串。
 
 ### 5.8 `start`
 无操作，跳转到 `next`
 
-### 5.9 `llm_call`
-**语义**：调用推理引擎内置 LLM 推理内核  
-**约束**：仅可通过 `/lib/reasoning/**` 子图调用，禁止用户在知识应用层或主 DAG 中直接使用  
+### 5.9 `dsl_call`（v3.10 新名；旧名 `llm_call` 保留为向后兼容别名）
 
-**必需字段**：
+> **v3.10 变更**：`llm_call` 重命名为 `dsl_call`，以更准确地描述其语义——通过已注册的 LLM 工具生成文本/DSL 内容。旧式 `llm_call` 类型字符串在参考执行器中继续有效（创建 `DSLNode`，使用默认工具名 `"llama-default"`）。
+
+**语义**：通过 `ToolRegistry` 中注册的 LLM 工具生成文本，写入上下文字段  
+**节点类型字符串**：`dsl_call`（推荐）或 `llm_call`（向后兼容）
+
+**完整格式**（`dsl_call`）：
+```yaml
+type: dsl_call
+prompt_template: "请分析 {{ $.input }} 并给出结论"   # Inja 模板，执行前渲染
+llm_tool_name: "llama-7b"                             # 对应 register_llm_tool() 注册的名称
+llm_params:
+  temperature: 0.7        # 默认 0.7
+  max_tokens: 512         # 默认 512
+  top_p: 0.95             # 默认 0.95
+  n_ctx: 2048             # 默认 2048
+  n_threads: 4            # 默认 4
+  model: "llama-2-7b"    # 可选，覆盖工具默认模型
+output_keys: ["analysis"]  # 写入上下文的字段名（LLM 输出文本写入第一个 key）
+next: "/main/verify"
+```
+
+**向后兼容格式**（`llm_call`，使用默认工具 `"llama-default"`）：
+```yaml
+type: llm_call
+prompt_template: "Summarize: {{ input }}"
+output_keys: "summary"
+next: "/main/end"
+```
+
+**字段表**：
 | 字段 | 类型 | 必需 | 说明 |
 |------|------|------|------|
-| llm.model | string | ✅ | 模型标识（如 `gpt-4o`, `llama-3-8b`） |
-| llm.seed | integer | ✅ | 确定性种子 |
-| llm.temperature | number | ✅ | 温度（0.0–1.0） |
-| llm.prompt | string | ✅ | 提示词（Inja 渲染后） |
+| prompt_template | string | ✅ | Inja 模板提示词，执行前渲染 |
+| llm_tool_name | string | ✅（dsl_call）| 已注册的 LLM 工具名 |
+| llm_params | object | ❌ | 生成参数（temperature, max_tokens, top_p, n_ctx, n_threads, model） |
+| output_keys | string/list | ✅ | LLM 输出文本写入的上下文字段名 |
+| next | string/list | ❌ | 后继节点路径 |
 
-**标准可选字段**（执行器必须识别，未声明则忽略）：
-| 字段 | 类型 | 默认值 | 说明 |
-|------|------|--------|------|
-| llm.max_tokens | integer | 256 | 最大生成长度 |
-| llm.output_schema | object | — | JSON Schema，用于结构化输出约束 |
-| llm.kv_handle | string | — | KV 缓存句柄，用于续写 |
-| llm.stop_condition | string | — | 流式终止条件（如特殊 token 或字符串） |
-| llm.draft_model | string | "phi-3-mini" | 推测解码头模型 |
-| llm.max_speculative_tokens | integer | 5 | 推测最大 token 数 |
+**执行器行为**：
+- 渲染 `prompt_template` 后，通过 `ToolRegistry::call_llm_tool(llm_tool_name, prompt, params)` 生成文本
+- 生成结果（`LLMResult.text`）写入 `output_keys[0]` 对应的上下文字段
+- 若 `llm_tool_name` 未注册，抛出运行时错误
+- `output_keys` 为空时抛出运行时错误
 
-**行为规则**：
-- 所有字段必须通过 `Inja` 安全渲染（禁止任意代码）
-- 若字段未定义（如 `output_schema`），执行器应忽略而非报错
-- 返回值必须包含 `text` 字段；若支持 KV 复用，可附加 `kv_handle`
-- **Trace 必须记录**：
+**Trace 输出**：
 ```json
 {
-  "llm_call": {
-    "model": "gpt-4o",
+  "dsl_call": {
+    "llm_tool_name": "llama-7b",
     "prompt_tokens": 120,
-    "completion_tokens": 80,
-    "used_features": ["output_schema", "kv_handle"],
-    "backend_used": "AgenticInfer-v1.4"
+    "completion_tokens": 80
   }
 }
 ```
 
-**权限要求**：必须声明对应推理权限（如 `reasoning: llm_generate`）
+**权限要求**：建议声明对应推理权限（如 `reasoning: llm_generate`）
+
+**注册方式（C++ 宿主代码）**：
+```cpp
+auto engine = DSLEngine::from_markdown(dsl_content);
+auto tool = std::make_unique<LlamaTool>(LlamaAdapter::Config{
+    .model_path = "/models/llama-2-7b.gguf"
+});
+engine->register_llm_tool("llama-7b", std::move(tool));
+```
 
 ## 六、统一文档结构
 
@@ -282,7 +331,7 @@ signature:
 ### 6.3 显式执行入口
 ```yaml
 AgenticDSL `/__meta__`
-version: "3.9"
+version: "3.10"
 mode: dev
 entry_point: "/main/start"  # ✅ 必需：DAG 执行入口路径
 execution_budget:
@@ -748,16 +797,59 @@ class ToolAdapter:
 ```
 
 ### G.2 C++ 推理核心集成点
-- **KV 缓存管理**：通过 `native_inference_core.kv_alloc` 与 `llm_call.kv_handle`
-- **语法约束**：通过 `native_inference_core.compile_grammar` 与 `llm_call.output_schema`
-- **流式处理**：通过 `native_inference_core.stream_until` 与 `llm_call.stop_condition`
-- **执行器必须提供 C API**，允许推理核心注册能力（如 `register_capability("kv_continuation")`）
+
+参考执行器通过 `ILLMTool` 接口和 `LlamaAdapter` 类封装推理核心，采用 C++ RAII 风格（非 C API）：
+
+```cpp
+// 1. 实现 ILLMTool 接口（src/common/llm/llm_tool.h）
+class ILLMTool {
+public:
+    virtual LLMResult generate(const std::string& prompt,
+                               const LLMParams& params = {}) = 0;
+    virtual bool is_available() const = 0;
+    virtual std::string name() const = 0;
+};
+
+// 2. 内置实现：LlamaAdapter（src/common/llm/llama_adapter.h）
+class LlamaAdapter {
+public:
+    struct Config {
+        std::string model_path;
+        int n_ctx = 2048;
+        int n_threads = 4;
+        float temperature = 0.7f;
+        float min_p = 0.05f;
+        int n_predict = 512;
+    };
+    explicit LlamaAdapter(const Config& config);
+    std::string generate(const std::string& prompt);
+    bool is_loaded() const;
+};
+
+// 3. LlamaTool：将 LlamaAdapter 适配为 ILLMTool
+class LlamaTool : public ILLMTool {
+public:
+    explicit LlamaTool(const LlamaAdapter::Config& config);
+    LLMResult generate(const std::string& prompt,
+                       const LLMParams& params = {}) override;
+};
+```
+
+**集成流程**：
+1. 实现 `ILLMTool`（或使用内置 `LlamaTool`）
+2. 通过 `DSLEngine::register_llm_tool(name, tool)` 注册到引擎
+3. DSL 中 `dsl_call` 节点通过 `llm_tool_name` 字段引用该工具
+4. 执行器通过 `ToolRegistry::call_llm_tool()` 调用，返回 `LLMResult.text`
+
+**能力扩展**：通过 `ResourceManager` 注册 `Resource`（类型 `CUSTOM`，`metadata["capabilities"]` 声明能力列表），供节点权限检查使用。
+
+> 📌 参考实现通过 `ILLMTool::is_available()` 和资源声明协商能力，不再依赖 C API 注册机制。
 
 ---
 
-**AgenticDSL v3.9+ 是 AI-操作系统和推理能力标准化的关键一步**。  
-通过 **三层抽象 + 对话协议标准化 + Core SDK 契约化**，  
-**契约化推理原语 + 安全 `llm_call` + 资源声明联动**，  
+**AgenticDSL v3.10 是参考执行器 v1.0 对应的稳定规范版本**。  
+通过 **三层抽象 + `dsl_call`/`generate_subgraph` 统一节点模型 + `ILLMTool` 接口解耦**，  
 为构建 **可靠、可协作、可进化的智能体生态** 提供工业级工程基石。
 
-**发布计划**：2025 Q4 开源参考执行器 + 对话子图参考实现
+**参考执行器 v1.0** 已开源，包含完整的 DAG 调度器、上下文引擎、LLM 工具注册机制及 Trace 导出。  
+**v1.x 计划**：真正并发执行（Fork/Join）、对话协议完整实现、Context TTL、`codelet_call` 沙箱支持。
